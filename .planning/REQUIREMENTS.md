@@ -9,8 +9,8 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### WSDL Parsing
 
-- [ ] **WSDL-01**: Parser reads WSDL 1.1 XML and constructs in-memory representation (services, port types, bindings, messages, operations)
-- [ ] **WSDL-02**: Two-pass resolution — parse pass collects raw nodes, resolve pass wires cross-references (message refs, port type refs, binding refs)
+- [x] **WSDL-01**: Parser reads WSDL 1.1 XML and constructs in-memory representation (services, port types, bindings, messages, operations)
+- [x] **WSDL-02**: Two-pass resolution — parse pass collects raw nodes, resolve pass wires cross-references (message refs, port type refs, binding refs)
 - [ ] **WSDL-03**: Import resolution — recursively loads `<wsdl:import>` targets, caches by namespace/location, handles diamond imports and prevents cycles
 - [ ] **WSDL-04**: WSDL serving on GET `?wsdl` returns the WSDL XML with `soap:address location` rewritten to match the server's actual URL
 - [ ] **WSDL-05**: Imported XSD schemas are either inlined or served at their own URLs via GET
@@ -63,13 +63,13 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Security
 
-- [ ] **SEC-01**: Extract `wsse:Security` header from SOAP Header
-- [ ] **SEC-02**: WS-Security UsernameToken PasswordDigest validation — `Base64(SHA-1(Base64Decode(Nonce) + Created + Password))`
-- [ ] **SEC-03**: WS-Security UsernameToken PasswordText validation — direct plaintext comparison
+- [x] **SEC-01**: Extract `wsse:Security` header from SOAP Header
+- [x] **SEC-02**: WS-Security UsernameToken PasswordDigest validation — `Base64(SHA-1(Base64Decode(Nonce) + Created + Password))`
+- [x] **SEC-03**: WS-Security UsernameToken PasswordText validation — direct plaintext comparison
 - [x] **SEC-04**: Timestamp validation with configurable tolerance (default 300 seconds)
 - [x] **SEC-05**: Nonce replay prevention with time-windowed cache (rotating bucket design, default 300s window)
-- [ ] **SEC-06**: Per-operation auth bypass — configurable whitelist of operations that skip WS-Security
-- [ ] **SEC-07**: Reject unauthenticated requests with SOAP Fault on auth failure
+- [x] **SEC-06**: Per-operation auth bypass — configurable whitelist of operations that skip WS-Security
+- [x] **SEC-07**: Reject unauthenticated requests with SOAP Fault on auth failure
 
 ### HTTP Integration
 
@@ -113,8 +113,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| WSDL-01 | Phase 1 | Pending |
-| WSDL-02 | Phase 1 | Pending |
+| WSDL-01 | Phase 1 | Complete |
+| WSDL-02 | Phase 1 | Complete |
 | WSDL-03 | Phase 1 | Pending |
 | WSDL-04 | Phase 1 | Pending |
 | WSDL-05 | Phase 1 | Pending |
@@ -149,13 +149,13 @@ Which phases cover which requirements. Updated during roadmap creation.
 | HDL-01 | Phase 1 | Complete |
 | HDL-02 | Phase 1 | Complete |
 | HDL-03 | Phase 1 | Complete |
-| SEC-01 | Phase 1 | Pending |
-| SEC-02 | Phase 1 | Pending |
-| SEC-03 | Phase 1 | Pending |
+| SEC-01 | Phase 1 | Complete |
+| SEC-02 | Phase 1 | Complete |
+| SEC-03 | Phase 1 | Complete |
 | SEC-04 | Phase 1 | Complete |
 | SEC-05 | Phase 1 | Complete |
-| SEC-06 | Phase 1 | Pending |
-| SEC-07 | Phase 1 | Pending |
+| SEC-06 | Phase 1 | Complete |
+| SEC-07 | Phase 1 | Complete |
 | HTTP-01 | Phase 1 | Pending |
 | HTTP-02 | Phase 1 | Pending |
 | HTTP-03 | Phase 1 | Pending |
