@@ -118,6 +118,15 @@ impl TypeRegistry {
     }
 }
 
+impl IntoIterator for TypeRegistry {
+    type Item = (QName, XsdType);
+    type IntoIter = std::collections::hash_map::IntoIter<QName, XsdType>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.types.into_iter()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

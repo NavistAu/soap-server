@@ -472,14 +472,27 @@ fn node_to_string(node: roxmltree::Node) -> String {
 
 fn serialize_node(node: roxmltree::Node, out: &mut String) {
     if node.is_element() {
-        out.push('<');
-        out.push_str(node.tag_name().name());
+        let tag_name = node.tag_name();
+        let local = tag_name.name();
+        let ns_uri = tag_name.namespace().unwrap_or("");
 
-        // Emit namespace declarations
+        // Find the prefix for this element's namespace so we emit a qualified name.
+        // This is needed because the serialized fragment must be parseable standalone —
+        // the parent document's default namespace (e.g. WSDL namespace) must not bleed in.
+        let prefix = find_prefix_for_ns(node, ns_uri);
+        let qualified_name = match &prefix {
+            Some(p) if !p.is_empty() => format!("{}:{}", p, local),
+            _ => local.to_string(),
+        };
+
+        out.push('<');
+        out.push_str(&qualified_name);
+
+        // Emit namespace declarations (only those declared on THIS node to avoid duplication)
         for ns in node.namespaces() {
             match ns.name() {
-                Some(prefix) => {
-                    out.push_str(&format!(" xmlns:{}=\"{}\"", prefix, ns.uri()));
+                Some(p) => {
+                    out.push_str(&format!(" xmlns:{}=\"{}\"", p, ns.uri()));
                 }
                 None => {
                     out.push_str(&format!(" xmlns=\"{}\"", ns.uri()));
@@ -502,7 +515,7 @@ fn serialize_node(node: roxmltree::Node, out: &mut String) {
                 serialize_node(child, out);
             }
             out.push_str("</");
-            out.push_str(node.tag_name().name());
+            out.push_str(&qualified_name);
             out.push('>');
         } else {
             out.push_str("/>");
@@ -512,6 +525,21 @@ fn serialize_node(node: roxmltree::Node, out: &mut String) {
             out.push_str(text);
         }
     }
+}
+
+/// Find the prefix bound to the given namespace URI in scope at `node`.
+/// Returns Some(prefix) where prefix may be empty string for default namespace.
+fn find_prefix_for_ns(node: roxmltree::Node, ns_uri: &str) -> Option<String> {
+    if ns_uri.is_empty() {
+        return None;
+    }
+    // Walk the in-scope namespaces to find one matching this URI
+    for ns in node.namespaces() {
+        if ns.uri() == ns_uri {
+            return Some(ns.name().unwrap_or("").to_string());
+        }
+    }
+    None
 }
 
 #[cfg(test)]
