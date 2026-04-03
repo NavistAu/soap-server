@@ -1,4 +1,6 @@
-// TODO: WSDL 1.1 parser — two-pass (parse + resolve)
-mod definitions;
-mod parser;
-mod resolver;
+// WSDL 1.1 parser — two-pass (parse + resolve)
+pub mod definitions;
+pub mod parser;
+pub mod resolver;
+
+pub use definitions::WsdlDefinition;

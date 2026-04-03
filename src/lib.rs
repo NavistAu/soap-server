@@ -2,6 +2,7 @@ pub mod dispatch;
 pub mod envelope;
 pub mod fault;
 pub mod handler;
+pub mod qname;
 pub mod server;
 pub mod wsdl;
 pub mod wssec;
