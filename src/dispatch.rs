@@ -32,6 +32,8 @@ impl std::fmt::Debug for DispatchEntry {
 pub struct DispatchTable {
     by_element: HashMap<QName, DispatchEntry>,
     by_action: HashMap<String, DispatchEntry>,
+    /// Optional catch-all handler for operations not explicitly registered.
+    pub default_handler: Option<Arc<dyn SoapHandler>>,
 }
 
 /// Errors that can occur while building the dispatch table (startup-time validation).
@@ -47,13 +49,17 @@ pub enum DispatchError {
 ///
 /// `handlers` is keyed by operation name (e.g., "GetProfiles").
 /// `auth_bypass` is the set of operation names that skip authentication.
+/// `default_handler` is an optional catch-all used when no specific handler matches.
+///   When `Some`, operations without a registered handler are silently skipped (no error).
+///   When `None`, every WSDL operation must have a handler or `UnregisteredOperation` is returned.
 ///
-/// Returns `Err(DispatchError::UnregisteredOperation)` if any WSDL operation has no handler.
+/// Returns `Err(DispatchError::UnregisteredOperation)` if any WSDL operation has no handler and no default.
 /// Returns `Err(DispatchError::UnknownOperation)` if any registered handler has no WSDL operation.
 pub fn build_dispatch_table(
     resolved: &ResolvedWsdl,
     handlers: HashMap<String, Arc<dyn SoapHandler>>,
     auth_bypass: &HashSet<String>,
+    default_handler: Option<Arc<dyn SoapHandler>>,
 ) -> Result<DispatchTable, DispatchError> {
     let mut by_element: HashMap<QName, DispatchEntry> = HashMap::new();
     let mut by_action: HashMap<String, DispatchEntry> = HashMap::new();
@@ -95,9 +101,13 @@ pub fn build_dispatch_table(
     }
 
     for (op_name, soap_action) in unique_ops {
-        let handler = handlers.get(&op_name)
-            .ok_or_else(|| DispatchError::UnregisteredOperation(op_name.clone()))?
-            .clone();
+        let handler = match handlers.get(&op_name) {
+            Some(h) => h.clone(),
+            None => match &default_handler {
+                Some(d) => d.clone(),
+                None => return Err(DispatchError::UnregisteredOperation(op_name.clone())),
+            },
+        };
 
         consumed_handlers.insert(op_name.clone());
 
@@ -141,7 +151,7 @@ pub fn build_dispatch_table(
         }
     }
 
-    Ok(DispatchTable { by_element, by_action })
+    Ok(DispatchTable { by_element, by_action, default_handler })
 }
 
 /// Resolve the input element QName for a named operation.
@@ -189,6 +199,8 @@ pub fn route<'a>(
     }
 
     Err(SoapFault::action_not_supported(&body_first_child_qname.to_string()))
+    // Note: default_handler is not reachable via route() — it is used at build_dispatch_table()
+    // time to fill entries for unregistered operations, so by dispatch time all entries exist.
 }
 
 /// XSD-11: Structural validation of the request body against the operation's input type.
@@ -463,7 +475,7 @@ mod tests {
         let mut handlers = HashMap::new();
         handlers.insert("GetProfiles".to_string(), mock_handler("GetProfiles"));
 
-        let table = build_dispatch_table(&resolved, handlers, &HashSet::new()).unwrap();
+        let table = build_dispatch_table(&resolved, handlers, &HashSet::new(), None).unwrap();
         let entry = route(&table, &elem_qname, None).unwrap();
 
         // Handler is present (we can verify by running it synchronously via block_on equivalent)
@@ -477,7 +489,7 @@ mod tests {
 
         // No handlers provided at all — should fail at startup
         let handlers: HashMap<String, Arc<dyn SoapHandler>> = HashMap::new();
-        let result = build_dispatch_table(&resolved, handlers, &HashSet::new());
+        let result = build_dispatch_table(&resolved, handlers, &HashSet::new(), None);
 
         assert!(matches!(result, Err(DispatchError::UnregisteredOperation(ref name)) if name == "GetProfiles"));
     }
@@ -491,7 +503,7 @@ mod tests {
         handlers.insert("GetProfiles".to_string(), mock_handler("GetProfiles"));
         handlers.insert("NonExistentOp".to_string(), mock_handler("ghost")); // no WSDL op
 
-        let result = build_dispatch_table(&resolved, handlers, &HashSet::new());
+        let result = build_dispatch_table(&resolved, handlers, &HashSet::new(), None);
         assert!(matches!(result, Err(DispatchError::UnknownOperation(ref name)) if name == "NonExistentOp"));
     }
 
@@ -502,7 +514,7 @@ mod tests {
 
         let mut handlers = HashMap::new();
         handlers.insert("GetProfiles".to_string(), mock_handler("GetProfiles"));
-        let table = build_dispatch_table(&resolved, handlers, &HashSet::new()).unwrap();
+        let table = build_dispatch_table(&resolved, handlers, &HashSet::new(), None).unwrap();
 
         let unknown = QName::new("http://example.com", "UnknownOperation");
         let result = route(&table, &unknown, None);
@@ -520,7 +532,7 @@ mod tests {
 
         let mut handlers = HashMap::new();
         handlers.insert("GetProfiles".to_string(), mock_handler("GetProfiles"));
-        let table = build_dispatch_table(&resolved, handlers, &HashSet::new()).unwrap();
+        let table = build_dispatch_table(&resolved, handlers, &HashSet::new(), None).unwrap();
 
         // Unknown body QName but known SOAPAction
         let unknown = QName::local("SomethingElse");
@@ -535,7 +547,7 @@ mod tests {
 
         let mut handlers = HashMap::new();
         handlers.insert("GetProfiles".to_string(), mock_handler("GetProfiles"));
-        let table = build_dispatch_table(&resolved, handlers, &HashSet::new()).unwrap();
+        let table = build_dispatch_table(&resolved, handlers, &HashSet::new(), None).unwrap();
 
         let unknown = QName::local("SomethingElse");
         let result = route(&table, &unknown, Some("urn:UnknownAction"));
@@ -554,7 +566,7 @@ mod tests {
         let mut bypass = HashSet::new();
         bypass.insert("GetProfiles".to_string());
 
-        let table = build_dispatch_table(&resolved, handlers, &bypass).unwrap();
+        let table = build_dispatch_table(&resolved, handlers, &bypass, None).unwrap();
         let entry = route(&table, &elem_qname, None).unwrap();
         assert!(!entry.auth_required); // bypassed — no auth required
     }
@@ -567,7 +579,7 @@ mod tests {
         let mut handlers = HashMap::new();
         handlers.insert("SetSomething".to_string(), mock_handler("SetSomething"));
 
-        let table = build_dispatch_table(&resolved, handlers, &HashSet::new()).unwrap();
+        let table = build_dispatch_table(&resolved, handlers, &HashSet::new(), None).unwrap();
         let entry = route(&table, &elem_qname, None).unwrap();
         assert!(entry.auth_required);
     }
@@ -660,7 +672,7 @@ mod tests {
         let mut handlers = HashMap::new();
         handlers.insert("GetProfiles".to_string(), mock_handler("GetProfiles"));
 
-        let table = build_dispatch_table(&resolved, handlers, &HashSet::new()).unwrap();
+        let table = build_dispatch_table(&resolved, handlers, &HashSet::new(), None).unwrap();
         let entry = route(&table, &elem_qname, None).unwrap();
         assert!(entry.auth_required);
     }

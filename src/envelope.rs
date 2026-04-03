@@ -127,7 +127,7 @@ pub fn parse_envelope(input: &[u8]) -> Result<ParsedEnvelope, SoapFault> {
 
 fn collect_header_children(
     reader: &mut quick_xml::NsReader<&[u8]>,
-    _ns_bindings: &[(String, String)],
+    ns_bindings: &[(String, String)],
 ) -> Result<Vec<Bytes>, SoapFault> {
     use quick_xml::events::Event;
     let mut children = Vec::new();
@@ -139,13 +139,41 @@ fn collect_header_children(
             (_, Event::Eof) => return Err(SoapFault::sender("Unexpected EOF in Header")),
             (_, Event::Start(e)) => {
                 if depth == 0 {
-                    // New child element — start collecting
+                    // New child element — start collecting.
+                    // Re-emit envelope namespace bindings on the child root so that
+                    // parsers consuming the extracted bytes can resolve prefixes like
+                    // wsse:, wsu:, tds: etc. that were declared on the Envelope element.
                     current_buf.clear();
-                    // Write start tag
                     current_buf.extend_from_slice(b"<");
                     current_buf.extend_from_slice(e.name().as_ref());
-                    for attr in e.attributes() {
-                        let attr = attr.map_err(|_| SoapFault::sender("Invalid attribute"))?;
+
+                    // Collect the element's own attribute keys (to avoid double-declaring).
+                    let mut own_attr_keys: std::collections::HashSet<String> = std::collections::HashSet::new();
+                    let own_attrs: Vec<_> = e.attributes().filter_map(|a| a.ok()).collect();
+                    for attr in &own_attrs {
+                        own_attr_keys.insert(
+                            std::str::from_utf8(attr.key.as_ref()).unwrap_or("").to_string()
+                        );
+                    }
+
+                    // Emit inherited namespace bindings first (skip if already declared on element).
+                    for (prefix, uri) in ns_bindings {
+                        let key = if prefix.is_empty() {
+                            "xmlns".to_string()
+                        } else {
+                            format!("xmlns:{prefix}")
+                        };
+                        if !own_attr_keys.contains(&key) {
+                            current_buf.extend_from_slice(b" ");
+                            current_buf.extend_from_slice(key.as_bytes());
+                            current_buf.extend_from_slice(b"=\"");
+                            current_buf.extend_from_slice(uri.as_bytes());
+                            current_buf.extend_from_slice(b"\"");
+                        }
+                    }
+
+                    // Emit element's own attributes.
+                    for attr in &own_attrs {
                         current_buf.extend_from_slice(b" ");
                         current_buf.extend_from_slice(attr.key.as_ref());
                         current_buf.extend_from_slice(b"=\"");

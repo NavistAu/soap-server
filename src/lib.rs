@@ -9,6 +9,9 @@ pub(crate) mod xsd;
 pub mod fault;
 pub mod handler;
 
-pub use crate::server::{ServerBuilder, SoapService, BuildError};
+pub use crate::server::{ServerBuilder, SoapService, BuildError, FileWsdlLoader};
 pub use crate::handler::{SoapHandler, FnHandler};
 pub use crate::fault::{SoapFault, FaultCode};
+pub use crate::wssec::username_token::compute_digest;
+pub use crate::wsdl::resolver::WsdlLoader;
+pub use crate::wsdl::parser::WsdlError;

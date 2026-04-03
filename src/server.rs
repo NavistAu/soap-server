@@ -35,7 +35,9 @@ const DEFAULT_TIMESTAMP_TOLERANCE_SECS: i64 = 300;
 pub struct ServerBuilder {
     wsdl_bytes: Option<Vec<u8>>,
     wsdl_path: Option<std::path::PathBuf>,
+    custom_loader: Option<Arc<dyn WsdlLoader>>,
     handlers: HashMap<String, Arc<dyn SoapHandler>>,
+    default_handler: Option<Arc<dyn SoapHandler>>,
     auth_fn: Option<Arc<dyn Fn(&str) -> Option<String> + Send + Sync + 'static>>,
     auth_bypass: HashSet<String>,
     mount_path: String,
@@ -48,7 +50,9 @@ impl ServerBuilder {
         Self {
             wsdl_bytes: None,
             wsdl_path: None,
+            custom_loader: None,
             handlers: HashMap::new(),
+            default_handler: None,
             auth_fn: None,
             auth_bypass: HashSet::new(),
             mount_path: "/soap".to_string(),
@@ -65,15 +69,35 @@ impl ServerBuilder {
     }
 
     /// Use the provided WSDL bytes directly (no file I/O).
+    /// For WSDLs with external imports, use `from_wsdl_file` or `from_wsdl_bytes_with_loader`.
     pub fn from_wsdl_bytes(bytes: impl Into<Vec<u8>>) -> Self {
         let mut builder = Self::new();
         builder.wsdl_bytes = Some(bytes.into());
         builder
     }
 
+    /// Use the provided WSDL bytes with a custom loader for resolving external imports.
+    /// The loader is invoked for any `wsdl:import` or `xs:import` location strings.
+    pub fn from_wsdl_bytes_with_loader(
+        bytes: impl Into<Vec<u8>>,
+        loader: impl WsdlLoader + 'static,
+    ) -> Self {
+        let mut builder = Self::new();
+        builder.wsdl_bytes = Some(bytes.into());
+        builder.custom_loader = Some(Arc::new(loader));
+        builder
+    }
+
     /// Register a handler for the named WSDL operation.
     pub fn handler(mut self, operation: impl Into<String>, handler: impl SoapHandler) -> Self {
         self.handlers.insert(operation.into(), Arc::new(handler));
+        self
+    }
+
+    /// Register a catch-all handler invoked for any WSDL operation without a specific handler.
+    /// When set, `build()` will not return `UnregisteredOperation` for unhandled operations.
+    pub fn default_handler(mut self, handler: impl SoapHandler) -> Self {
+        self.default_handler = Some(Arc::new(handler));
         self
     }
 
@@ -115,25 +139,41 @@ impl ServerBuilder {
     /// Build the SoapService, resolving the WSDL and building the dispatch table.
     /// Returns an error if the WSDL cannot be resolved or the dispatch table is inconsistent.
     pub fn build(self) -> Result<SoapService, BuildError> {
-        // Step 1: Load WSDL bytes.
-        let wsdl_bytes = match (self.wsdl_bytes, self.wsdl_path) {
-            (Some(bytes), _) => bytes,
+        // Step 1: Load WSDL bytes, preserving the file path for loader selection.
+        let (wsdl_bytes, wsdl_file_path) = match (self.wsdl_bytes, self.wsdl_path) {
+            (Some(bytes), _) => (bytes, None),
             (None, Some(path)) => {
-                std::fs::read(&path).map_err(|e| BuildError::WsdlIo(e.to_string()))?
+                let bytes = std::fs::read(&path).map_err(|e| BuildError::WsdlIo(e.to_string()))?;
+                (bytes, Some(path))
             }
             (None, None) => return Err(BuildError::MissingWsdl),
         };
 
-        // Step 2: Resolve WSDL (pass 1 + pass 2) with a no-op loader
-        // (embedded/self-contained WSDL — imports resolved from provided bytes only).
-        let loader = NoOpLoader;
+        // Step 2: Resolve WSDL (pass 1 + pass 2).
+        // Loader selection priority:
+        //   1. custom_loader (explicitly provided via from_wsdl_bytes_with_loader)
+        //   2. FileWsdlLoader (when loaded from a file path)
+        //   3. NoOpLoader (embedded bytes — imports unsupported)
         let mut visited = HashSet::new();
-        let resolved =
-            resolve_wsdl(&wsdl_bytes, &loader, &mut visited).map_err(|e| BuildError::WsdlParse(e.to_string()))?;
+        let resolved = if let Some(ref loader) = self.custom_loader {
+            resolve_wsdl(&wsdl_bytes, loader.as_ref(), &mut visited)
+                .map_err(|e| BuildError::WsdlParse(e.to_string()))?
+        } else if let Some(ref path) = wsdl_file_path {
+            let base_dir = path.parent()
+                .unwrap_or_else(|| std::path::Path::new("."))
+                .to_path_buf();
+            let loader = FileWsdlLoader { base_dir };
+            resolve_wsdl(&wsdl_bytes, &loader, &mut visited)
+                .map_err(|e| BuildError::WsdlParse(e.to_string()))?
+        } else {
+            let loader = NoOpLoader;
+            resolve_wsdl(&wsdl_bytes, &loader, &mut visited)
+                .map_err(|e| BuildError::WsdlParse(e.to_string()))?
+        };
 
         // Step 3: Build dispatch table.
         // Build dispatch table before moving type_registry out of resolved.
-        let dispatch_table = dispatch::build_dispatch_table(&resolved, self.handlers, &self.auth_bypass)
+        let dispatch_table = dispatch::build_dispatch_table(&resolved, self.handlers, &self.auth_bypass, self.default_handler)
             .map_err(|e| match e {
                 DispatchError::UnregisteredOperation(op) => BuildError::UnregisteredOperation(op),
                 DispatchError::UnknownOperation(op) => BuildError::UnknownOperation(op),
@@ -181,6 +221,45 @@ impl WsdlLoader for NoOpLoader {
             "External WSDL import '{location}' not supported in embedded mode"
         )))
     }
+}
+
+/// A WsdlLoader that resolves import locations relative to a base directory on the filesystem.
+/// Used automatically when ServerBuilder::from_wsdl_file() is called.
+pub struct FileWsdlLoader {
+    base_dir: std::path::PathBuf,
+}
+
+impl WsdlLoader for FileWsdlLoader {
+    fn load(&self, location: &str) -> Result<Vec<u8>, crate::wsdl::parser::WsdlError> {
+        // Resolve the location relative to the base directory, normalizing ".." components.
+        let raw_path = self.base_dir.join(location);
+        let path = normalize_path(&raw_path);
+        std::fs::read(&path).map_err(|e| {
+            crate::wsdl::parser::WsdlError::MalformedXml(format!(
+                "Failed to load WSDL import '{location}' from '{}': {e}",
+                path.display()
+            ))
+        })
+    }
+}
+
+/// Normalize a path by resolving ".." components without requiring the path to exist.
+/// This is needed because std::fs::canonicalize requires the path to exist on disk.
+fn normalize_path(path: &std::path::Path) -> std::path::PathBuf {
+    use std::path::Component;
+    let mut normalized = std::path::PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::ParentDir => {
+                normalized.pop();
+            }
+            Component::CurDir => {}
+            other => {
+                normalized.push(other);
+            }
+        }
+    }
+    normalized
 }
 
 // ── SoapService ───────────────────────────────────────────────────────────────

@@ -147,8 +147,19 @@ fn resolve_named_type(
     }
 
     // Look up the raw type.
-    let xsd_type = flat.types.get(qname)
-        .ok_or_else(|| SchemaError::UnknownRef(qname.to_string()))?;
+    // If the type is from an external/unloaded schema, treat it as opaque (empty complex type).
+    // This allows WSDL loading to succeed for partial schemas (e.g., ONVIF with external imports
+    // from wsn/b-2, xop/include, etc.) — unknown references are not dispatch-critical.
+    let xsd_type = match flat.types.get(qname) {
+        Some(t) => t,
+        None => {
+            return Ok(ComplexType {
+                name: None,
+                content: ComplexContent::Empty,
+                attributes: vec![],
+            });
+        }
+    };
 
     let raw_ct = match xsd_type {
         XsdType::Complex(ct) => ct.clone(),
@@ -294,8 +305,10 @@ fn resolve_element_list(
                 continue;
             }
 
-            // Unknown ref.
-            return Err(SchemaError::UnknownRef(group_qname.to_string()));
+            // Unknown element ref (e.g., from an external/unloaded schema like xop:Include).
+            // Skip it — unresolvable references are treated as optional/opaque for dispatch
+            // purposes. The validate_request step will not fail on unknown types.
+            continue;
         }
 
         result.push(el.clone());
