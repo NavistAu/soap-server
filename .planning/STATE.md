@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Phase 1 context gathered
-last_updated: "2026-04-03T17:09:46.750Z"
+stopped_at: Completed 01-onvif-level-support/01-01-PLAN.md
+last_updated: "2026-04-03T18:03:44.707Z"
 last_activity: 2026-04-03 — Roadmap restructured from 4 phases to 2 phases
 progress:
   total_phases: 2
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_plans: 10
+  completed_plans: 1
   percent: 0
 ---
 
@@ -50,6 +50,7 @@ Progress: [░░░░░░░░░░] 0%
 - Trend: —
 
 *Updated after each plan completion*
+| Phase 01-onvif-level-support P01-01 | 3 | 2 tasks | 26 files |
 
 ## Accumulated Context
 
@@ -62,6 +63,7 @@ Recent decisions affecting current work:
 - [Init]: Two-pass parse pattern mandatory — single-pass cannot handle forward references in ONVIF WSDLs
 - [Init]: Raw handler trait is primary API — typed handler deferred to v2
 - [2026-04-03]: Restructured from 4 phases to 2 — Phase 1 is everything needed to unblock onvif-server (XSD/WSDL parsing + full SOAP 1.2 pipeline including WS-Security); Phase 2 is SOAP 1.1 and broader spec compliance
+- [Phase 01-onvif-level-support]: axum-test uses calendar versioning (20.x not 0.16); .tool-versions pins Rust 1.85.1 for edition2024; real ONVIF fixtures from onvif.org bundled as canonical test basis
 
 ### Pending Todos
 
@@ -74,6 +76,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-03T17:09:46.748Z
-Stopped at: Phase 1 context gathered
-Resume file: .planning/phases/01-onvif-level-support/01-CONTEXT.md
+Last session: 2026-04-03T18:03:44.705Z
+Stopped at: Completed 01-onvif-level-support/01-01-PLAN.md
+Resume file: None

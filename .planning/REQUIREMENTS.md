@@ -17,7 +17,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### XSD Schema
 
-- [ ] **XSD-01**: Parser reads XSD schemas and constructs in-memory type graph (elements, complexType, simpleType, attributes, groups)
+- [x] **XSD-01**: Parser reads XSD schemas and constructs in-memory type graph (elements, complexType, simpleType, attributes, groups)
 - [ ] **XSD-02**: Supports `xs:sequence`, `xs:all`, `xs:choice` content models
 - [ ] **XSD-03**: Supports `xs:extension` and `xs:restriction` (type inheritance) with recursive chain resolution
 - [ ] **XSD-04**: Supports `xs:import` and `xs:include` with cycle detection and caching
@@ -118,7 +118,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | WSDL-03 | Phase 1 | Pending |
 | WSDL-04 | Phase 1 | Pending |
 | WSDL-05 | Phase 1 | Pending |
-| XSD-01 | Phase 1 | Pending |
+| XSD-01 | Phase 1 | Complete |
 | XSD-02 | Phase 1 | Pending |
 | XSD-03 | Phase 1 | Pending |
 | XSD-04 | Phase 1 | Pending |
