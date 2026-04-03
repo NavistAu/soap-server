@@ -113,59 +113,59 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| WSDL-01 | — | Pending |
-| WSDL-02 | — | Pending |
-| WSDL-03 | — | Pending |
-| WSDL-04 | — | Pending |
-| WSDL-05 | — | Pending |
-| XSD-01 | — | Pending |
-| XSD-02 | — | Pending |
-| XSD-03 | — | Pending |
-| XSD-04 | — | Pending |
-| XSD-05 | — | Pending |
-| XSD-06 | — | Pending |
-| XSD-07 | — | Pending |
-| XSD-08 | — | Pending |
-| XSD-09 | — | Pending |
-| XSD-10 | — | Pending |
-| XSD-11 | — | Pending |
-| ENV-01 | — | Pending |
-| ENV-02 | — | Pending |
-| ENV-03 | — | Pending |
-| ENV-04 | — | Pending |
-| ENV-05 | — | Pending |
-| ENV-06 | — | Pending |
-| FLT-01 | — | Pending |
-| FLT-02 | — | Pending |
-| FLT-03 | — | Pending |
-| FLT-04 | — | Pending |
-| FLT-05 | — | Pending |
-| DSP-01 | — | Pending |
-| DSP-02 | — | Pending |
-| DSP-03 | — | Pending |
-| DSP-04 | — | Pending |
-| DSP-05 | — | Pending |
-| DSP-06 | — | Pending |
-| HDL-01 | — | Pending |
-| HDL-02 | — | Pending |
-| HDL-03 | — | Pending |
-| SEC-01 | — | Pending |
-| SEC-02 | — | Pending |
-| SEC-03 | — | Pending |
-| SEC-04 | — | Pending |
-| SEC-05 | — | Pending |
-| SEC-06 | — | Pending |
-| SEC-07 | — | Pending |
-| HTTP-01 | — | Pending |
-| HTTP-02 | — | Pending |
-| HTTP-03 | — | Pending |
-| HTTP-04 | — | Pending |
+| WSDL-01 | Phase 1 | Pending |
+| WSDL-02 | Phase 1 | Pending |
+| WSDL-03 | Phase 1 | Pending |
+| WSDL-04 | Phase 1 | Pending |
+| WSDL-05 | Phase 1 | Pending |
+| XSD-01 | Phase 1 | Pending |
+| XSD-02 | Phase 1 | Pending |
+| XSD-03 | Phase 1 | Pending |
+| XSD-04 | Phase 1 | Pending |
+| XSD-05 | Phase 1 | Pending |
+| XSD-06 | Phase 1 | Pending |
+| XSD-07 | Phase 1 | Pending |
+| XSD-08 | Phase 1 | Pending |
+| XSD-09 | Phase 1 | Pending |
+| XSD-10 | Phase 1 | Pending |
+| XSD-11 | Phase 1 | Pending |
+| ENV-01 | Phase 1 | Pending |
+| ENV-02 | Phase 1 | Pending |
+| ENV-03 | Phase 1 | Pending |
+| ENV-04 | Phase 1 | Pending |
+| ENV-05 | Phase 2 | Pending |
+| ENV-06 | Phase 2 | Pending |
+| FLT-01 | Phase 1 | Pending |
+| FLT-02 | Phase 1 | Pending |
+| FLT-03 | Phase 1 | Pending |
+| FLT-04 | Phase 2 | Pending |
+| FLT-05 | Phase 2 | Pending |
+| DSP-01 | Phase 1 | Pending |
+| DSP-02 | Phase 1 | Pending |
+| DSP-03 | Phase 1 | Pending |
+| DSP-04 | Phase 1 | Pending |
+| DSP-05 | Phase 2 | Pending |
+| DSP-06 | Phase 2 | Pending |
+| HDL-01 | Phase 1 | Pending |
+| HDL-02 | Phase 1 | Pending |
+| HDL-03 | Phase 1 | Pending |
+| SEC-01 | Phase 1 | Pending |
+| SEC-02 | Phase 1 | Pending |
+| SEC-03 | Phase 1 | Pending |
+| SEC-04 | Phase 1 | Pending |
+| SEC-05 | Phase 1 | Pending |
+| SEC-06 | Phase 1 | Pending |
+| SEC-07 | Phase 1 | Pending |
+| HTTP-01 | Phase 1 | Pending |
+| HTTP-02 | Phase 1 | Pending |
+| HTTP-03 | Phase 1 | Pending |
+| HTTP-04 | Phase 1 | Pending |
 
 **Coverage:**
-- v1 requirements: 43 total
-- Mapped to phases: 0
-- Unmapped: 43 ⚠️
+- v1 requirements: 47 total
+- Mapped to phases: 47
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-04-03*
-*Last updated: 2026-04-03 after initial definition*
+*Last updated: 2026-04-03 — traceability updated after 4-phase to 2-phase restructure*
