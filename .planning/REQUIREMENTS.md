@@ -27,7 +27,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **XSD-08**: Supports `xs:any` and `xs:anyAttribute` extensibility points
 - [x] **XSD-09**: Supports `xs:simpleType` restrictions (enumeration, minInclusive, maxInclusive, pattern, length, etc.)
 - [x] **XSD-10**: Supports `xs:list` and `xs:union` compound simple types
-- [ ] **XSD-11**: Payload validation — validate request body XML against the operation's input XSD schema before handler invocation
+- [x] **XSD-11**: Payload validation — validate request body XML against the operation's input XSD schema before handler invocation
 
 ### SOAP Envelope
 
@@ -48,10 +48,10 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Dispatch
 
-- [ ] **DSP-01**: Document/literal dispatch — route requests by body element QName (namespace + local name) to registered handler
-- [ ] **DSP-02**: SOAPAction header used as secondary dispatch hint when body element alone is ambiguous
-- [ ] **DSP-03**: Dispatch table built at startup from parsed WSDL — no per-request WSDL interpretation
-- [ ] **DSP-04**: Unmatched operations produce a SOAP Fault (action not supported)
+- [x] **DSP-01**: Document/literal dispatch — route requests by body element QName (namespace + local name) to registered handler
+- [x] **DSP-02**: SOAPAction header used as secondary dispatch hint when body element alone is ambiguous
+- [x] **DSP-03**: Dispatch table built at startup from parsed WSDL — no per-request WSDL interpretation
+- [x] **DSP-04**: Unmatched operations produce a SOAP Fault (action not supported)
 - [ ] **DSP-05**: RPC/encoded binding style dispatch (backfill)
 - [ ] **DSP-06**: Multiple services per WSDL — dispatch across services, each with its own operation table (backfill)
 
@@ -128,7 +128,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | XSD-08 | Phase 1 | Complete |
 | XSD-09 | Phase 1 | Complete |
 | XSD-10 | Phase 1 | Complete |
-| XSD-11 | Phase 1 | Pending |
+| XSD-11 | Phase 1 | Complete |
 | ENV-01 | Phase 1 | Complete |
 | ENV-02 | Phase 1 | Complete |
 | ENV-03 | Phase 1 | Complete |
@@ -140,10 +140,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | FLT-03 | Phase 1 | Complete |
 | FLT-04 | Phase 2 | Pending |
 | FLT-05 | Phase 2 | Pending |
-| DSP-01 | Phase 1 | Pending |
-| DSP-02 | Phase 1 | Pending |
-| DSP-03 | Phase 1 | Pending |
-| DSP-04 | Phase 1 | Pending |
+| DSP-01 | Phase 1 | Complete |
+| DSP-02 | Phase 1 | Complete |
+| DSP-03 | Phase 1 | Complete |
+| DSP-04 | Phase 1 | Complete |
 | DSP-05 | Phase 2 | Pending |
 | DSP-06 | Phase 2 | Pending |
 | HDL-01 | Phase 1 | Complete |

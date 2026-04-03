@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Completed 01-onvif-level-support/01-07-PLAN.md
-last_updated: "2026-04-03T18:38:19.057Z"
+stopped_at: Completed 01-onvif-level-support/01-08-PLAN.md
+last_updated: "2026-04-03T18:45:03.516Z"
 last_activity: 2026-04-03 — Roadmap restructured from 4 phases to 2 phases
 progress:
   total_phases: 2
   completed_phases: 0
   total_plans: 10
-  completed_plans: 7
+  completed_plans: 8
   percent: 0
 ---
 
@@ -57,6 +57,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01-onvif-level-support P05 | 8min | 1 tasks | 3 files |
 | Phase 01-onvif-level-support P06 | 10min | 2 tasks | 4 files |
 | Phase 01-onvif-level-support P07 | 12min | 1 tasks | 4 files |
+| Phase 01-onvif-level-support P08 | 5min | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -82,6 +83,8 @@ Recent decisions affecting current work:
 - [Phase 01-onvif-level-support]: quick-xml namespace resolution uses running HashMap accumulator — handles xmlns declared on ancestor elements, not just current element
 - [Phase 01-onvif-level-support]: accumulated_types HashMap threaded through resolve_wsdl_inner recursion for correct cross-WSDL type deduplication
 - [Phase 01-onvif-level-support]: serialize_node() must emit xs:-prefixed element names via find_prefix_for_ns() — bare local names cause inline schema strings to inherit WSDL default namespace
+- [Phase 01-onvif-level-support]: DispatchEntry.auth_required set at build time from auth_bypass HashSet — avoids per-request set lookup; security interceptor reads a bool
+- [Phase 01-onvif-level-support]: validate_request skips validation silently when input_type is None or qname not in registry — unknown type is not an error (forward-compat with partial WSDLs)
 
 ### Pending Todos
 
@@ -94,6 +97,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-03T18:38:19.055Z
-Stopped at: Completed 01-onvif-level-support/01-07-PLAN.md
+Last session: 2026-04-03T18:45:03.513Z
+Stopped at: Completed 01-onvif-level-support/01-08-PLAN.md
 Resume file: None
