@@ -1193,6 +1193,7 @@ dependencies = [
  "http-body-util",
  "quick-xml",
  "roxmltree",
+ "serde",
  "sha1",
  "thiserror",
  "tokio",
