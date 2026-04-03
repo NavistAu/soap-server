@@ -27,7 +27,19 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. A request with a valid WS-Security UsernameToken PasswordDigest is accepted and dispatched; a wrong password, malformed digest, expired timestamp, or replayed nonce is rejected with a SOAP fault before handler invocation
   4. GET `?wsdl` returns the WSDL XML with `soap:address location` rewritten to the server's actual URL
   5. The server returns an `axum::Router` that composes cleanly with other routes via `Router::merge`
-**Plans**: TBD
+**Plans**: 10 plans
+
+Plans:
+- [ ] 01-01-PLAN.md — Crate scaffold: Cargo.toml, module skeleton, ONVIF test fixtures
+- [ ] 01-02-PLAN.md — Foundation types: fault.rs, handler.rs, xsd/types.rs, xsd/elements.rs, wsdl/definitions.rs
+- [ ] 01-03-PLAN.md — XSD Pass 1 parser: all visit_* functions for complexType, simpleType, element, attribute, group, any
+- [ ] 01-04-PLAN.md — SOAP envelope parse/serialize and WS-Security timestamp + nonce cache
+- [ ] 01-05-PLAN.md — XSD Pass 2 resolver: extension chain flattening, restriction, import/include with cycle detection
+- [ ] 01-06-PLAN.md — WS-Security UsernameToken validation and WSDL Pass 1 parser
+- [ ] 01-07-PLAN.md — WSDL Pass 2 resolver: cross-ref wiring, import loading, schema delegation, address rewriting
+- [ ] 01-08-PLAN.md — Dispatch table and XSD payload validation (DSP-01–04, XSD-11)
+- [ ] 01-09-PLAN.md — ServerBuilder, SoapService, full request pipeline, axum Router integration
+- [ ] 01-10-PLAN.md — ONVIF end-to-end integration tests (phase acceptance gate)
 
 ### Phase 2: Full Spec Compliance
 **Goal**: The server handles SOAP 1.1 requests with correct envelope parsing and fault format, dispatches RPC/encoded bindings, and routes multi-service WSDLs — covering the full SOAP spec beyond ONVIF's subset
@@ -48,5 +60,5 @@ Phases execute in numeric order: 1 → 2
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. ONVIF-Level Support | 0/TBD | Not started | - |
+| 1. ONVIF-Level Support | 0/10 | Not started | - |
 | 2. Full Spec Compliance | 0/TBD | Not started | - |
