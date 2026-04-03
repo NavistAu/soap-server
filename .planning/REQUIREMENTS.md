@@ -31,10 +31,10 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### SOAP Envelope
 
-- [ ] **ENV-01**: Parse SOAP 1.2 envelope — extract Header children and Body first child element
-- [ ] **ENV-02**: Serialize SOAP 1.2 response envelope wrapping handler output
-- [ ] **ENV-03**: Detect SOAP version from request Content-Type (`application/soap+xml` = 1.2, `text/xml` = 1.1)
-- [ ] **ENV-04**: Set correct response Content-Type header matching the request's SOAP version
+- [x] **ENV-01**: Parse SOAP 1.2 envelope — extract Header children and Body first child element
+- [x] **ENV-02**: Serialize SOAP 1.2 response envelope wrapping handler output
+- [x] **ENV-03**: Detect SOAP version from request Content-Type (`application/soap+xml` = 1.2, `text/xml` = 1.1)
+- [x] **ENV-04**: Set correct response Content-Type header matching the request's SOAP version
 - [ ] **ENV-05**: Parse SOAP 1.1 envelope (backfill)
 - [ ] **ENV-06**: Serialize SOAP 1.1 response envelope (backfill)
 
@@ -66,8 +66,8 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **SEC-01**: Extract `wsse:Security` header from SOAP Header
 - [ ] **SEC-02**: WS-Security UsernameToken PasswordDigest validation — `Base64(SHA-1(Base64Decode(Nonce) + Created + Password))`
 - [ ] **SEC-03**: WS-Security UsernameToken PasswordText validation — direct plaintext comparison
-- [ ] **SEC-04**: Timestamp validation with configurable tolerance (default 300 seconds)
-- [ ] **SEC-05**: Nonce replay prevention with time-windowed cache (rotating bucket design, default 300s window)
+- [x] **SEC-04**: Timestamp validation with configurable tolerance (default 300 seconds)
+- [x] **SEC-05**: Nonce replay prevention with time-windowed cache (rotating bucket design, default 300s window)
 - [ ] **SEC-06**: Per-operation auth bypass — configurable whitelist of operations that skip WS-Security
 - [ ] **SEC-07**: Reject unauthenticated requests with SOAP Fault on auth failure
 
@@ -129,10 +129,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | XSD-09 | Phase 1 | Complete |
 | XSD-10 | Phase 1 | Complete |
 | XSD-11 | Phase 1 | Pending |
-| ENV-01 | Phase 1 | Pending |
-| ENV-02 | Phase 1 | Pending |
-| ENV-03 | Phase 1 | Pending |
-| ENV-04 | Phase 1 | Pending |
+| ENV-01 | Phase 1 | Complete |
+| ENV-02 | Phase 1 | Complete |
+| ENV-03 | Phase 1 | Complete |
+| ENV-04 | Phase 1 | Complete |
 | ENV-05 | Phase 2 | Pending |
 | ENV-06 | Phase 2 | Pending |
 | FLT-01 | Phase 1 | Complete |
@@ -152,8 +152,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SEC-01 | Phase 1 | Pending |
 | SEC-02 | Phase 1 | Pending |
 | SEC-03 | Phase 1 | Pending |
-| SEC-04 | Phase 1 | Pending |
-| SEC-05 | Phase 1 | Pending |
+| SEC-04 | Phase 1 | Complete |
+| SEC-05 | Phase 1 | Complete |
 | SEC-06 | Phase 1 | Pending |
 | SEC-07 | Phase 1 | Pending |
 | HTTP-01 | Phase 1 | Pending |

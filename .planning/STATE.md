@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Completed 01-onvif-level-support/01-02-PLAN.md
-last_updated: "2026-04-03T18:10:29.645Z"
+stopped_at: Completed 01-onvif-level-support/01-04-PLAN.md
+last_updated: "2026-04-03T18:15:51.249Z"
 last_activity: 2026-04-03 — Roadmap restructured from 4 phases to 2 phases
 progress:
   total_phases: 2
   completed_phases: 0
   total_plans: 10
-  completed_plans: 2
+  completed_plans: 3
   percent: 0
 ---
 
@@ -52,6 +52,7 @@ Progress: [░░░░░░░░░░] 0%
 *Updated after each plan completion*
 | Phase 01-onvif-level-support P01-01 | 3 | 2 tasks | 26 files |
 | Phase 01-onvif-level-support P02 | 5min | 2 tasks | 10 files |
+| Phase 01-onvif-level-support P04 | 3min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -67,6 +68,8 @@ Recent decisions affecting current work:
 - [Phase 01-onvif-level-support]: axum-test uses calendar versioning (20.x not 0.16); .tool-versions pins Rust 1.85.1 for edition2024; real ONVIF fixtures from onvif.org bundled as canonical test basis
 - [Phase 01-onvif-level-support]: Rust 1.88.0 required — axum-test 20.0.0 transitive deps (time/icu crates) need rustc 1.88.0 minimum
 - [Phase 01-onvif-level-support]: Box<XsdType> for XsdElement.inline_type to break ComplexType -> ComplexContent -> Vec<XsdElement> recursive cycle
+- [Phase 01-onvif-level-support]: Namespace re-emission on body fragment uses xmlns:* attribute inspection on Envelope element (not NsReader.resolver().bindings()) — quick-xml 0.39 does not surface a bindings iterator at the Start event level
+- [Phase 01-onvif-level-support]: force_rotate() test helper added to RotatingNonceCache under #[cfg(test)] to enable deterministic bucket rotation testing without sleeps
 
 ### Pending Todos
 
@@ -79,6 +82,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-03T18:10:29.643Z
-Stopped at: Completed 01-onvif-level-support/01-02-PLAN.md
+Last session: 2026-04-03T18:15:51.247Z
+Stopped at: Completed 01-onvif-level-support/01-04-PLAN.md
 Resume file: None
