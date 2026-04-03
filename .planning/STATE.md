@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Completed 01-onvif-level-support/01-09-PLAN.md
-last_updated: "2026-04-03T18:54:48.813Z"
+stopped_at: "Checkpoint 01-10 Task 2: Phase 1 acceptance gate — awaiting human verification"
+last_updated: "2026-04-03T19:08:22.975Z"
 last_activity: 2026-04-03 — Roadmap restructured from 4 phases to 2 phases
 progress:
   total_phases: 2
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 10
-  completed_plans: 9
+  completed_plans: 10
   percent: 0
 ---
 
@@ -59,6 +59,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01-onvif-level-support P07 | 12min | 1 tasks | 4 files |
 | Phase 01-onvif-level-support P08 | 5min | 1 tasks | 1 files |
 | Phase 01-onvif-level-support P09 | 7min | 1 tasks | 4 files |
+| Phase 01-onvif-level-support PP10 | 20min | 1 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -87,6 +88,10 @@ Recent decisions affecting current work:
 - [Phase 01-onvif-level-support]: DispatchEntry.auth_required set at build time from auth_bypass HashSet — avoids per-request set lookup; security interceptor reads a bool
 - [Phase 01-onvif-level-support]: validate_request skips validation silently when input_type is None or qname not in registry — unknown type is not an error (forward-compat with partial WSDLs)
 - [Phase 01-onvif-level-support]: TestServer::new().bytes().content_type() — axum-test .text() overrides content-type with text/plain; must use .bytes() to preserve application/soap+xml
+- [Phase 01-onvif-level-support]: ServerBuilder::default_handler() required for large multi-operation WSDLs — build() fails with UnregisteredOperation for every unhandled op without it
+- [Phase 01-onvif-level-support]: XSD resolver tolerant unknown refs — external schemas (wsn/b-2, xop/include) return Empty ComplexType; unknown type is not an error
+- [Phase 01-onvif-level-support]: Header namespace re-emission fix in collect_header_children() — envelope xmlns:* bindings must be re-emitted on extracted header child fragments for wsse: prefix resolution
+- [Phase 01-onvif-level-support]: FixtureLoader maps by basename — real ONVIF relative paths resolved to tests/fixtures/ files by extracting last path component
 
 ### Pending Todos
 
@@ -99,6 +104,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-03T18:54:48.811Z
-Stopped at: Completed 01-onvif-level-support/01-09-PLAN.md
+Last session: 2026-04-03T19:08:07.783Z
+Stopped at: Checkpoint 01-10 Task 2: Phase 1 acceptance gate — awaiting human verification
 Resume file: None
