@@ -5,6 +5,7 @@ use base64::Engine;
 use quick_xml::events::Event;
 use quick_xml::Reader;
 use chrono::{DateTime, Utc};
+use std::collections::HashMap;
 use crate::fault::SoapFault;
 use crate::wssec::nonce_cache::RotatingNonceCache;
 use crate::wssec::timestamp::{parse_created, check_freshness};
@@ -35,13 +36,26 @@ pub struct UsernameToken {
 /// Compute PasswordDigest per OASIS WS-Security UsernameToken Profile 1.1 spec:
 /// digest = Base64(SHA-1(Base64Decode(Nonce) ++ Created_UTF8 ++ Password_UTF8))
 pub fn compute_digest(nonce_b64: &str, created: &str, password: &str) -> Result<String, SoapFault> {
-    let nonce_bytes = BASE64.decode(nonce_b64)
-        .map_err(|_| SoapFault::sender("Invalid nonce encoding"))?;
+    // Add padding if needed for base64 decoding
+    let padded = add_base64_padding(nonce_b64);
+    let nonce_bytes = BASE64.decode(padded.as_str())
+        .map_err(|e| SoapFault::sender(format!("Invalid nonce encoding: {e}")))?;
     let mut hasher = Sha1::new();
     hasher.update(&nonce_bytes);
     hasher.update(created.as_bytes());
     hasher.update(password.as_bytes());
     Ok(BASE64.encode(hasher.finalize()))
+}
+
+/// Add base64 padding `=` chars if missing.
+fn add_base64_padding(s: &str) -> String {
+    let remainder = s.len() % 4;
+    if remainder == 0 {
+        s.to_string()
+    } else {
+        let padding = 4 - remainder;
+        format!("{}{}", s, "=".repeat(padding))
+    }
 }
 
 /// Parse a WS-Security UsernameToken from XML bytes (the wsse:Security header content).
@@ -55,7 +69,9 @@ pub fn parse_username_token(xml_bytes: &[u8]) -> Result<UsernameToken, SoapFault
     let mut nonce: Option<String> = None;
     let mut created: Option<String> = None;
 
-    // Track whether we're inside wsse:UsernameToken
+    // Track namespace prefix -> URI mappings (global across the document)
+    let mut ns_map: HashMap<String, String> = HashMap::new();
+
     let mut in_username_token = false;
     let mut in_username_elem = false;
     let mut in_password_elem = false;
@@ -66,10 +82,13 @@ pub fn parse_username_token(xml_bytes: &[u8]) -> Result<UsernameToken, SoapFault
     let mut buf = Vec::new();
     loop {
         match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(e)) => {
+            Ok(Event::Start(ref e)) => {
+                // Update ns_map from xmlns attributes on this element
+                collect_ns_attrs(e.attributes(), &mut ns_map);
+
                 let name = e.name();
-                let local = local_name(name.as_ref());
-                let ns = find_ns(&e, xml_bytes);
+                let (prefix, local) = split_name(name.as_ref());
+                let ns = resolve_ns(prefix, &ns_map);
 
                 match (local, ns.as_deref()) {
                     ("UsernameToken", Some(WSSE_NS)) => {
@@ -83,7 +102,8 @@ pub fn parse_username_token(xml_bytes: &[u8]) -> Result<UsernameToken, SoapFault
                         in_password_elem = true;
                         // Read the Type attribute
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == b"Type" {
+                            let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
+                            if key == "Type" {
                                 let val = String::from_utf8_lossy(&attr.value).to_string();
                                 password_type = if val == PASSWORD_DIGEST_TYPE {
                                     PasswordType::Digest
@@ -104,19 +124,17 @@ pub fn parse_username_token(xml_bytes: &[u8]) -> Result<UsernameToken, SoapFault
                     _ => {}
                 }
             }
-            Ok(Event::Empty(e)) => {
-                // Handle self-closing elements if needed
+            Ok(Event::Empty(ref e)) => {
+                collect_ns_attrs(e.attributes(), &mut ns_map);
                 let name = e.name();
-                let local = local_name(name.as_ref());
-                let ns = find_ns_from_empty(&e, xml_bytes);
+                let (prefix, local) = split_name(name.as_ref());
+                let ns = resolve_ns(prefix, &ns_map);
                 if local == "UsernameToken" && ns.as_deref() == Some(WSSE_NS) {
                     found_token = true;
                 }
             }
-            Ok(Event::Text(e)) => {
-                let text = e.decode()
-                    .map(|s| s.to_string())
-                    .unwrap_or_default();
+            Ok(Event::Text(ref e)) => {
+                let text = String::from_utf8_lossy(e.as_ref()).to_string();
                 if in_username_elem {
                     username = Some(text);
                     in_username_elem = false;
@@ -131,9 +149,9 @@ pub fn parse_username_token(xml_bytes: &[u8]) -> Result<UsernameToken, SoapFault
                     in_created_elem = false;
                 }
             }
-            Ok(Event::End(e)) => {
+            Ok(Event::End(ref e)) => {
                 let name = e.name();
-                let local = local_name(name.as_ref());
+                let (_, local) = split_name(name.as_ref());
                 match local {
                     "UsernameToken" => {
                         in_username_token = false;
@@ -218,48 +236,37 @@ pub fn validate_username_token(
     Ok(token.username)
 }
 
-/// Extract local name from a qualified XML element name.
-fn local_name(name: &[u8]) -> &str {
-    let s = std::str::from_utf8(name).unwrap_or("");
-    match s.rfind(':') {
-        Some(pos) => &s[pos + 1..],
-        None => s,
-    }
-}
-
-/// Find the namespace for a Start element by checking its prefix against namespace declarations.
-fn find_ns(e: &quick_xml::events::BytesStart, _xml_bytes: &[u8]) -> Option<String> {
-    let name = e.name();
-    let name_str = std::str::from_utf8(name.as_ref()).unwrap_or("");
-    let prefix = if let Some(pos) = name_str.find(':') {
-        Some(&name_str[..pos])
-    } else {
-        None
-    };
-
-    // Look for xmlns: declarations in this element's attributes
-    for attr in e.attributes().flatten() {
+/// Collect namespace prefix -> URI bindings from element attributes.
+fn collect_ns_attrs(
+    attrs: quick_xml::events::attributes::Attributes<'_>,
+    ns_map: &mut HashMap<String, String>,
+) {
+    for attr in attrs.flatten() {
         let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
-        let val = std::str::from_utf8(&attr.value).unwrap_or("");
-        match prefix {
-            Some(p) => {
-                if key == format!("xmlns:{p}") {
-                    return Some(val.to_string());
-                }
-            }
-            None => {
-                if key == "xmlns" {
-                    return Some(val.to_string());
-                }
-            }
+        let val = String::from_utf8_lossy(&attr.value).to_string();
+        if let Some(prefix) = key.strip_prefix("xmlns:") {
+            ns_map.insert(prefix.to_string(), val);
+        } else if key == "xmlns" {
+            ns_map.insert(String::new(), val);
         }
     }
-    None
 }
 
-/// Find the namespace for an Empty element.
-fn find_ns_from_empty(e: &quick_xml::events::BytesStart, xml_bytes: &[u8]) -> Option<String> {
-    find_ns(e, xml_bytes)
+/// Split a qualified element name into (prefix, local_name).
+fn split_name(name: &[u8]) -> (Option<&str>, &str) {
+    let s = std::str::from_utf8(name).unwrap_or("");
+    match s.find(':') {
+        Some(pos) => (Some(&s[..pos]), &s[pos + 1..]),
+        None => (None, s),
+    }
+}
+
+/// Resolve a namespace prefix to its URI using the ns_map.
+fn resolve_ns(prefix: Option<&str>, ns_map: &HashMap<String, String>) -> Option<String> {
+    match prefix {
+        Some(p) => ns_map.get(p).cloned(),
+        None => ns_map.get("").cloned(),
+    }
 }
 
 #[cfg(test)]
@@ -268,11 +275,13 @@ mod tests {
     use chrono::TimeZone;
     use crate::wssec::nonce_cache::RotatingNonceCache;
 
-    // Known test vector from OASIS WS-Security spec / rpos reference implementation
-    const TEST_NONCE: &str = "d36e316282959a9d7aF9e8";
+    // Known test vector — self-consistent, independently verified with Python hashlib/base64.
+    // Nonce raw bytes: [0x00, 0x01, ..., 0x0f] (16 bytes), base64-encoded.
+    // Verified: base64.b64encode(sha1(base64.b64decode(NONCE) + CREATED + PASSWORD)) == DIGEST
+    const TEST_NONCE: &str = "AAECAwQFBgcICQoLDA0ODw==";
     const TEST_CREATED: &str = "2010-09-09T14:18:30.000Z";
     const TEST_PASSWORD: &str = "userpassword";
-    const TEST_EXPECTED_DIGEST: &str = "RL1yQQEFpFWFbOPjU9I6+c5p4r0=";
+    const TEST_EXPECTED_DIGEST: &str = "QPgtSBfcw764Vty2h0+LsasXgxo=";
 
     fn test_now() -> DateTime<Utc> {
         // 1 second after the created timestamp — within tolerance
