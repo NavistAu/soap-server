@@ -11,9 +11,9 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [x] **WSDL-01**: Parser reads WSDL 1.1 XML and constructs in-memory representation (services, port types, bindings, messages, operations)
 - [x] **WSDL-02**: Two-pass resolution — parse pass collects raw nodes, resolve pass wires cross-references (message refs, port type refs, binding refs)
-- [ ] **WSDL-03**: Import resolution — recursively loads `<wsdl:import>` targets, caches by namespace/location, handles diamond imports and prevents cycles
-- [ ] **WSDL-04**: WSDL serving on GET `?wsdl` returns the WSDL XML with `soap:address location` rewritten to match the server's actual URL
-- [ ] **WSDL-05**: Imported XSD schemas are either inlined or served at their own URLs via GET
+- [x] **WSDL-03**: Import resolution — recursively loads `<wsdl:import>` targets, caches by namespace/location, handles diamond imports and prevents cycles
+- [x] **WSDL-04**: WSDL serving on GET `?wsdl` returns the WSDL XML with `soap:address location` rewritten to match the server's actual URL
+- [x] **WSDL-05**: Imported XSD schemas are either inlined or served at their own URLs via GET
 
 ### XSD Schema
 
@@ -115,9 +115,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 |-------------|-------|--------|
 | WSDL-01 | Phase 1 | Complete |
 | WSDL-02 | Phase 1 | Complete |
-| WSDL-03 | Phase 1 | Pending |
-| WSDL-04 | Phase 1 | Pending |
-| WSDL-05 | Phase 1 | Pending |
+| WSDL-03 | Phase 1 | Complete |
+| WSDL-04 | Phase 1 | Complete |
+| WSDL-05 | Phase 1 | Complete |
 | XSD-01 | Phase 1 | Complete |
 | XSD-02 | Phase 1 | Complete |
 | XSD-03 | Phase 1 | Complete |
