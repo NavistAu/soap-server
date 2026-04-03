@@ -73,10 +73,10 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### HTTP Integration
 
-- [ ] **HTTP-01**: axum Router integration — server returns `axum::Router` composable with other routes
-- [ ] **HTTP-02**: POST handler for SOAP requests on configured path
-- [ ] **HTTP-03**: GET handler for WSDL serving on same path with `?wsdl` query parameter
-- [ ] **HTTP-04**: Server builder API — `Server::from_wsdl(wsdl).handler(...).auth(...).build()?`
+- [x] **HTTP-01**: axum Router integration — server returns `axum::Router` composable with other routes
+- [x] **HTTP-02**: POST handler for SOAP requests on configured path
+- [x] **HTTP-03**: GET handler for WSDL serving on same path with `?wsdl` query parameter
+- [x] **HTTP-04**: Server builder API — `Server::from_wsdl(wsdl).handler(...).auth(...).build()?`
 
 ## v2 Requirements
 
@@ -156,10 +156,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SEC-05 | Phase 1 | Complete |
 | SEC-06 | Phase 1 | Complete |
 | SEC-07 | Phase 1 | Complete |
-| HTTP-01 | Phase 1 | Pending |
-| HTTP-02 | Phase 1 | Pending |
-| HTTP-03 | Phase 1 | Pending |
-| HTTP-04 | Phase 1 | Pending |
+| HTTP-01 | Phase 1 | Complete |
+| HTTP-02 | Phase 1 | Complete |
+| HTTP-03 | Phase 1 | Complete |
+| HTTP-04 | Phase 1 | Complete |
 
 **Coverage:**
 - v1 requirements: 47 total

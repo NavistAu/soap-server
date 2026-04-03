@@ -60,5 +60,5 @@ Phases execute in numeric order: 1 → 2
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. ONVIF-Level Support | 8/10 | In Progress|  |
+| 1. ONVIF-Level Support | 9/10 | In Progress|  |
 | 2. Full Spec Compliance | 0/TBD | Not started | - |
