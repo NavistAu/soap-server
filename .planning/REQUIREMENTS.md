@@ -18,15 +18,15 @@ Requirements for initial release. Each maps to roadmap phases.
 ### XSD Schema
 
 - [x] **XSD-01**: Parser reads XSD schemas and constructs in-memory type graph (elements, complexType, simpleType, attributes, groups)
-- [ ] **XSD-02**: Supports `xs:sequence`, `xs:all`, `xs:choice` content models
+- [x] **XSD-02**: Supports `xs:sequence`, `xs:all`, `xs:choice` content models
 - [ ] **XSD-03**: Supports `xs:extension` and `xs:restriction` (type inheritance) with recursive chain resolution
 - [ ] **XSD-04**: Supports `xs:import` and `xs:include` with cycle detection and caching
-- [ ] **XSD-05**: Supports `xs:element` with ref, minOccurs, maxOccurs, nillable, default, fixed
-- [ ] **XSD-06**: Supports `xs:attribute` and `xs:attributeGroup` with ref, use, default, fixed
-- [ ] **XSD-07**: Supports `xs:group` for reusable content groups
-- [ ] **XSD-08**: Supports `xs:any` and `xs:anyAttribute` extensibility points
-- [ ] **XSD-09**: Supports `xs:simpleType` restrictions (enumeration, minInclusive, maxInclusive, pattern, length, etc.)
-- [ ] **XSD-10**: Supports `xs:list` and `xs:union` compound simple types
+- [x] **XSD-05**: Supports `xs:element` with ref, minOccurs, maxOccurs, nillable, default, fixed
+- [x] **XSD-06**: Supports `xs:attribute` and `xs:attributeGroup` with ref, use, default, fixed
+- [x] **XSD-07**: Supports `xs:group` for reusable content groups
+- [x] **XSD-08**: Supports `xs:any` and `xs:anyAttribute` extensibility points
+- [x] **XSD-09**: Supports `xs:simpleType` restrictions (enumeration, minInclusive, maxInclusive, pattern, length, etc.)
+- [x] **XSD-10**: Supports `xs:list` and `xs:union` compound simple types
 - [ ] **XSD-11**: Payload validation — validate request body XML against the operation's input XSD schema before handler invocation
 
 ### SOAP Envelope
@@ -40,9 +40,9 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Fault Generation
 
-- [ ] **FLT-01**: Generate spec-correct SOAP 1.2 faults with Code/Value, Reason/Text, and optional Detail
-- [ ] **FLT-02**: Support standard fault codes: VersionMismatch, MustUnderstand, DataEncodingUnknown, Sender, Receiver
-- [ ] **FLT-03**: Return HTTP 500 for SOAP 1.2 faults (per W3C SOAP 1.2 spec Section 7.4.2)
+- [x] **FLT-01**: Generate spec-correct SOAP 1.2 faults with Code/Value, Reason/Text, and optional Detail
+- [x] **FLT-02**: Support standard fault codes: VersionMismatch, MustUnderstand, DataEncodingUnknown, Sender, Receiver
+- [x] **FLT-03**: Return HTTP 500 for SOAP 1.2 faults (per W3C SOAP 1.2 spec Section 7.4.2)
 - [ ] **FLT-04**: Generate spec-correct SOAP 1.1 faults with faultcode, faultstring, faultactor, detail (backfill)
 - [ ] **FLT-05**: Map fault codes between versions (Sender ↔ Client, Receiver ↔ Server) (backfill)
 
@@ -57,9 +57,9 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Handler API
 
-- [ ] **HDL-01**: Raw handler trait — receives XML bytes of request body element, returns XML bytes of response body element or SoapFault
-- [ ] **HDL-02**: Async handler support (handler returns a Future)
-- [ ] **HDL-03**: Closure-based handler registration for ergonomic API
+- [x] **HDL-01**: Raw handler trait — receives XML bytes of request body element, returns XML bytes of response body element or SoapFault
+- [x] **HDL-02**: Async handler support (handler returns a Future)
+- [x] **HDL-03**: Closure-based handler registration for ergonomic API
 
 ### Security
 
@@ -119,15 +119,15 @@ Which phases cover which requirements. Updated during roadmap creation.
 | WSDL-04 | Phase 1 | Pending |
 | WSDL-05 | Phase 1 | Pending |
 | XSD-01 | Phase 1 | Complete |
-| XSD-02 | Phase 1 | Pending |
+| XSD-02 | Phase 1 | Complete |
 | XSD-03 | Phase 1 | Pending |
 | XSD-04 | Phase 1 | Pending |
-| XSD-05 | Phase 1 | Pending |
-| XSD-06 | Phase 1 | Pending |
-| XSD-07 | Phase 1 | Pending |
-| XSD-08 | Phase 1 | Pending |
-| XSD-09 | Phase 1 | Pending |
-| XSD-10 | Phase 1 | Pending |
+| XSD-05 | Phase 1 | Complete |
+| XSD-06 | Phase 1 | Complete |
+| XSD-07 | Phase 1 | Complete |
+| XSD-08 | Phase 1 | Complete |
+| XSD-09 | Phase 1 | Complete |
+| XSD-10 | Phase 1 | Complete |
 | XSD-11 | Phase 1 | Pending |
 | ENV-01 | Phase 1 | Pending |
 | ENV-02 | Phase 1 | Pending |
@@ -135,9 +135,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ENV-04 | Phase 1 | Pending |
 | ENV-05 | Phase 2 | Pending |
 | ENV-06 | Phase 2 | Pending |
-| FLT-01 | Phase 1 | Pending |
-| FLT-02 | Phase 1 | Pending |
-| FLT-03 | Phase 1 | Pending |
+| FLT-01 | Phase 1 | Complete |
+| FLT-02 | Phase 1 | Complete |
+| FLT-03 | Phase 1 | Complete |
 | FLT-04 | Phase 2 | Pending |
 | FLT-05 | Phase 2 | Pending |
 | DSP-01 | Phase 1 | Pending |
@@ -146,9 +146,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DSP-04 | Phase 1 | Pending |
 | DSP-05 | Phase 2 | Pending |
 | DSP-06 | Phase 2 | Pending |
-| HDL-01 | Phase 1 | Pending |
-| HDL-02 | Phase 1 | Pending |
-| HDL-03 | Phase 1 | Pending |
+| HDL-01 | Phase 1 | Complete |
+| HDL-02 | Phase 1 | Complete |
+| HDL-03 | Phase 1 | Complete |
 | SEC-01 | Phase 1 | Pending |
 | SEC-02 | Phase 1 | Pending |
 | SEC-03 | Phase 1 | Pending |
