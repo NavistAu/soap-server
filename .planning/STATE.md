@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: completed
-stopped_at: Completed 04-wsdl-address-fix 04-01-PLAN.md
-last_updated: "2026-04-05T07:41:01.263Z"
-last_activity: 2026-04-05 — WSDL per-service address fix implemented and tested
+status: milestone_complete
+stopped_at: v1.0 milestone archived
+last_updated: "2026-04-05T08:00:00.000Z"
+last_activity: 2026-04-05 — v1.0 milestone complete, archived to milestones/
 progress:
   total_phases: 4
   completed_phases: 4
@@ -18,19 +18,18 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-03)
+See: .planning/PROJECT.md (updated 2026-04-05)
 
 **Core value:** Given a WSDL file and handler functions, serve a fully spec-compliant SOAP endpoint with correct envelope parsing, dispatch, fault generation, and WSDL serving.
-**Current focus:** Phase 4 — WSDL Address Fix (complete)
+**Current focus:** v1.0 complete — planning next milestone
 
 ## Current Position
 
-Phase: 4 of 4 (WSDL Address Fix) — COMPLETE
-Plan: 1 of 1 — complete
-Status: v1.0 complete — all requirements met including WSDL address fix
-Last activity: 2026-04-05 — WSDL per-service address fix implemented and tested
+Milestone: v1.0 SHIPPED (2026-04-05)
+Status: Milestone archived, ready for next milestone
+Last activity: 2026-04-05 — v1.0 archived to .planning/milestones/
 
-Progress: [██████████] 100%
+Progress: v1.0 [██████████] 100% — SHIPPED
 
 ## Performance Metrics
 
