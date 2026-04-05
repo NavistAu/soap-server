@@ -4,7 +4,7 @@ milestone: v1.0
 milestone_name: milestone
 status: completed
 stopped_at: Completed 04-wsdl-address-fix 04-01-PLAN.md
-last_updated: "2026-04-05T07:38:20.852Z"
+last_updated: "2026-04-05T07:41:01.263Z"
 last_activity: 2026-04-05 — WSDL per-service address fix implemented and tested
 progress:
   total_phases: 4
