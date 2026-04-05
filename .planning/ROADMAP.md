@@ -15,6 +15,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: ONVIF-Level Support** - Everything needed to unblock onvif-server: XSD/WSDL parsing, SOAP 1.2 pipeline, WS-Security UsernameToken, axum Router integration (completed 2026-04-05)
 - [x] **Phase 2: Full Spec Compliance** - SOAP 1.1 envelope and fault support, RPC/encoded dispatch, multiple services per WSDL (completed 2026-04-05)
 - [x] **Phase 3: Audit Gap Closure** - Multi-service WSDL GET route, public API surface cleanup, stale TODO removal, documentation fixes (completed 2026-04-05)
+- [ ] **Phase 4: Multi-Service WSDL Address Fix** - Fix soap:address rewrite in multi-service WSDL GET, add integration test, fix doc metadata
 
 ## Phase Details
 
@@ -76,6 +77,20 @@ Plans:
 - [ ] 03-01-PLAN.md — WSDL GET in multi-service mode + public API re-exports + stale TODO removal
 - [ ] 03-02-PLAN.md — REQUIREMENTS.md checkbox fixes + 02-02-SUMMARY.md frontmatter backfill
 
+### Phase 4: Multi-Service WSDL Address Fix
+**Goal**: Fix soap:address rewrite in multi-service WSDL GET handler to use per-service path instead of mount_path, add integration test coverage, fix doc metadata
+**Depends on**: Phase 3
+**Requirements**: WSDL-04 (address rewrite correctness), HTTP-03 (GET handler correctness)
+**Gap Closure:** Closes remaining gaps from v1.0 re-audit
+**Success Criteria** (what must be TRUE):
+  1. GET /soap/a?wsdl returns WSDL XML with soap:address location containing /soap/a, not /soap
+  2. An automated integration test verifies multi-service WSDL GET returns correct address
+  3. 03-02-SUMMARY.md requirements-completed lists correct requirement IDs
+**Plans**: 0 plans
+
+Plans:
+(none yet — run `/gsd:plan-phase 4`)
+
 ## Progress
 
 **Execution Order:**
@@ -86,3 +101,4 @@ Phases execute in numeric order: 1 → 2
 | 1. ONVIF-Level Support | 10/10 | Complete    | 2026-04-05 |
 | 2. Full Spec Compliance | 3/3 | Complete   | 2026-04-05 |
 | 3. Audit Gap Closure | 2/2 | Complete   | 2026-04-05 |
+| 4. Multi-Service WSDL Address Fix | 0/0 | Pending    | — |
