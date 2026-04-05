@@ -624,6 +624,24 @@ mod tests {
     }
 
     #[test]
+    fn fault_response_soap12_content_type() {
+        use crate::wsdl::definitions::SoapVersion;
+        let fault = SoapFault::sender("test");
+        let response = fault_response(fault, SoapVersion::Soap12);
+        let ct = response.headers().get("content-type").unwrap();
+        assert_eq!(ct.to_str().unwrap(), "application/soap+xml; charset=utf-8");
+    }
+
+    #[test]
+    fn fault_response_soap11_content_type() {
+        use crate::wsdl::definitions::SoapVersion;
+        let fault = SoapFault::sender("test");
+        let response = fault_response(fault, SoapVersion::Soap11);
+        let ct = response.headers().get("content-type").unwrap();
+        assert_eq!(ct.to_str().unwrap(), "text/xml; charset=utf-8");
+    }
+
+    #[test]
     fn extract_body_qname_parses_namespaced_element() {
         let bytes = b"<tns:Ping xmlns:tns=\"http://example.com/test\"/>";
         let qname = extract_body_qname(bytes).unwrap();
