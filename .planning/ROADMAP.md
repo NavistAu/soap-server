@@ -14,6 +14,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: ONVIF-Level Support** - Everything needed to unblock onvif-server: XSD/WSDL parsing, SOAP 1.2 pipeline, WS-Security UsernameToken, axum Router integration (completed 2026-04-05)
 - [x] **Phase 2: Full Spec Compliance** - SOAP 1.1 envelope and fault support, RPC/encoded dispatch, multiple services per WSDL (completed 2026-04-05)
+- [ ] **Phase 3: Audit Gap Closure** - Multi-service WSDL GET route, public API surface cleanup, stale TODO removal, documentation fixes
 
 ## Phase Details
 
@@ -58,6 +59,22 @@ Plans:
 - [ ] 02-02-PLAN.md — SOAP 1.1 fault serializer (faultcode/faultstring) + versioned fault dispatch + integration tests
 - [ ] 02-03-PLAN.md — RPC dispatch QName synthesis + per-service multi-service routing
 
+### Phase 3: Audit Gap Closure
+**Goal**: Close all gaps from v1.0 milestone audit — add WSDL GET route in multi-service mode, re-export internal types for public API surface, remove stale TODO comments, fix documentation gaps
+**Depends on**: Phase 2
+**Requirements**: WSDL-04 (multi-service extension), DSP-06 (multi-service completeness)
+**Gap Closure:** Closes gaps from v1.0 audit
+**Success Criteria** (what must be TRUE):
+  1. GET /soap/a?wsdl returns WSDL XML in multi-service mode (not 405)
+  2. RotatingNonceCache, DispatchTable, build_dispatch_table, validate_username_token are accessible from lib.rs public API
+  3. No stale TODO comments remain in src/fault.rs or src/envelope.rs
+  4. REQUIREMENTS.md ENV-05/ENV-06 checkboxes are checked and traceability shows Complete
+  5. 02-02-SUMMARY.md frontmatter includes FLT-04, FLT-05 in requirements-completed
+**Plans**: 0 plans
+
+Plans:
+(none yet — run `/gsd:plan-phase 3`)
+
 ## Progress
 
 **Execution Order:**
@@ -67,3 +84,4 @@ Phases execute in numeric order: 1 → 2
 |-------|----------------|--------|-----------|
 | 1. ONVIF-Level Support | 10/10 | Complete    | 2026-04-05 |
 | 2. Full Spec Compliance | 3/3 | Complete   | 2026-04-05 |
+| 3. Audit Gap Closure | 0/0 | Pending    | — |
