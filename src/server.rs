@@ -433,7 +433,7 @@ struct SoapServiceRoute {
 // ── Helper: return a 500 SOAP fault response ──────────────────────────────────
 
 fn fault_response(fault: SoapFault, version: crate::wsdl::definitions::SoapVersion) -> Response {
-    let bytes = fault.to_xml_bytes();
+    let bytes = fault.to_xml_bytes_versioned(&version);
     let ct = response_content_type(&version);
     (
         StatusCode::INTERNAL_SERVER_ERROR,

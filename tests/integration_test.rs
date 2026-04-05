@@ -556,6 +556,154 @@ async fn multi_service_routing() {
     assert!(text.contains("env:Fault"), "Expected SOAP fault, got: {text}");
 }
 
+// ── Test 8: SOAP 1.1 end-to-end integration ───────────────────────────────────
+
+#[tokio::test]
+async fn soap11_end_to_end() {
+    let svc = ServerBuilder::from_wsdl_bytes(TEST_WSDL)
+        .handler(
+            "GetSystemDateAndTime",
+            FnHandler::new(|_body: bytes::Bytes| async move {
+                Ok::<bytes::Bytes, SoapFault>(bytes::Bytes::from_static(
+                    b"<tds:GetSystemDateAndTimeResponse xmlns:tds=\"http://example.com/test\"><tds:SystemDateAndTime>2024-01-01T00:00:00Z</tds:SystemDateAndTime></tds:GetSystemDateAndTimeResponse>",
+                ))
+            }),
+        )
+        .handler(
+            "GetProfiles",
+            FnHandler::new(|_body: bytes::Bytes| async move {
+                Ok::<bytes::Bytes, SoapFault>(bytes::Bytes::from_static(b"<resp/>"))
+            }),
+        )
+        .auth_bypass(["GetSystemDateAndTime", "GetProfiles"])
+        .build()
+        .expect("ServerBuilder::build() should succeed");
+
+    let router = svc.into_router();
+    let server = TestServer::new(router);
+
+    let soap11_body = r#"<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/">
+  <SOAP-ENV:Body>
+    <tds:GetSystemDateAndTime xmlns:tds="http://example.com/test"/>
+  </SOAP-ENV:Body>
+</SOAP-ENV:Envelope>"#;
+
+    let resp = server
+        .post("/soap")
+        .bytes(axum::body::Bytes::from(soap11_body.as_bytes().to_vec()))
+        .content_type("text/xml")
+        .await;
+
+    resp.assert_status_ok();
+    let resp_bytes = resp.as_bytes();
+    let resp_text = std::str::from_utf8(resp_bytes).expect("response should be valid UTF-8");
+    assert!(
+        resp_text.contains("http://schemas.xmlsoap.org/soap/envelope/"),
+        "Response should contain SOAP 1.1 namespace, got: {resp_text}"
+    );
+    assert!(
+        resp_text.contains("GetSystemDateAndTimeResponse"),
+        "Response should contain handler output, got: {resp_text}"
+    );
+}
+
+#[tokio::test]
+async fn soap11_fault_has_correct_structure() {
+    let svc = ServerBuilder::from_wsdl_bytes(TEST_WSDL)
+        .handler(
+            "GetSystemDateAndTime",
+            FnHandler::new(|_body: bytes::Bytes| async move {
+                Ok::<bytes::Bytes, SoapFault>(bytes::Bytes::from_static(b"<resp/>"))
+            }),
+        )
+        .handler(
+            "GetProfiles",
+            FnHandler::new(|_body: bytes::Bytes| async move {
+                Ok::<bytes::Bytes, SoapFault>(bytes::Bytes::from_static(b"<resp/>"))
+            }),
+        )
+        .auth_bypass(["GetSystemDateAndTime", "GetProfiles"])
+        .build()
+        .expect("ServerBuilder::build() should succeed");
+
+    let router = svc.into_router();
+    let server = TestServer::new(router);
+
+    let unknown_op_body = r#"<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/">
+  <SOAP-ENV:Body>
+    <tds:UnknownOp xmlns:tds="http://example.com/test"/>
+  </SOAP-ENV:Body>
+</SOAP-ENV:Envelope>"#;
+
+    let resp = server
+        .post("/soap")
+        .bytes(axum::body::Bytes::from(unknown_op_body.as_bytes().to_vec()))
+        .content_type("text/xml")
+        .await;
+
+    resp.assert_status(axum::http::StatusCode::INTERNAL_SERVER_ERROR);
+    let resp_bytes = resp.as_bytes();
+    let resp_text = std::str::from_utf8(resp_bytes).expect("response should be valid UTF-8");
+    assert!(
+        resp_text.contains("<faultcode>"),
+        "Expected <faultcode> element (SOAP 1.1 structure), got: {resp_text}"
+    );
+    assert!(
+        resp_text.contains("SOAP-ENV:Client"),
+        "Expected SOAP-ENV:Client fault code, got: {resp_text}"
+    );
+    assert!(
+        !resp_text.contains("<env:Code>"),
+        "Should NOT contain SOAP 1.2 <env:Code>, got: {resp_text}"
+    );
+}
+
+#[tokio::test]
+async fn soap11_fault_content_type_is_text_xml() {
+    let svc = ServerBuilder::from_wsdl_bytes(TEST_WSDL)
+        .handler(
+            "GetSystemDateAndTime",
+            FnHandler::new(|_body: bytes::Bytes| async move {
+                Ok::<bytes::Bytes, SoapFault>(bytes::Bytes::from_static(b"<resp/>"))
+            }),
+        )
+        .handler(
+            "GetProfiles",
+            FnHandler::new(|_body: bytes::Bytes| async move {
+                Ok::<bytes::Bytes, SoapFault>(bytes::Bytes::from_static(b"<resp/>"))
+            }),
+        )
+        .auth_bypass(["GetSystemDateAndTime", "GetProfiles"])
+        .build()
+        .expect("ServerBuilder::build() should succeed");
+
+    let router = svc.into_router();
+    let server = TestServer::new(router);
+
+    let unknown_op_body = r#"<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/">
+  <SOAP-ENV:Body>
+    <tds:UnknownOp xmlns:tds="http://example.com/test"/>
+  </SOAP-ENV:Body>
+</SOAP-ENV:Envelope>"#;
+
+    let resp = server
+        .post("/soap")
+        .bytes(axum::body::Bytes::from(unknown_op_body.as_bytes().to_vec()))
+        .content_type("text/xml")
+        .await;
+
+    resp.assert_status(axum::http::StatusCode::INTERNAL_SERVER_ERROR);
+    let content_type = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    assert!(
+        content_type.contains("text/xml"),
+        "Expected text/xml Content-Type for SOAP 1.1 fault, got: {content_type}"
+    );
+}
+
 // ── Test 8: RPC dispatch integration ─────────────────────────────────────────────
 
 #[tokio::test]
