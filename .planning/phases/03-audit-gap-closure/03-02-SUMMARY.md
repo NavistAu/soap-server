@@ -24,7 +24,7 @@ key_files:
 decisions:
   - "ENV-05 and ENV-06 were implemented in Phase 2 (02-01) but left unchecked in REQUIREMENTS.md — marked complete in audit gap closure"
   - "FLT-04 and FLT-05 requirements-completed field added to 02-02-SUMMARY.md frontmatter (were missing, not inaccurate)"
-requirements-completed: [WSDL-04, DSP-06]
+requirements-completed: [ENV-05, ENV-06, FLT-04, FLT-05]
 metrics:
   duration: "~1 minute"
   completed: "2026-04-05"

@@ -744,3 +744,46 @@ async fn rpc_dispatch_integration() {
     let text = resp.text();
     assert!(text.contains("GetDataResponse"), "Expected GetDataResponse, got: {text}");
 }
+
+// ── Test: multi-service GET ?wsdl rewrites address to per-service path ─────────
+
+#[tokio::test]
+async fn multi_service_wsdl_get_returns_correct_address() {
+    let svc = ServerBuilder::from_wsdl_bytes(MULTI_SERVICE_WSDL)
+        .handler(
+            "OpA",
+            FnHandler::new(|_body: Bytes| async move {
+                Ok::<Bytes, SoapFault>(Bytes::from_static(b"<OpAResponse/>"))
+            }),
+        )
+        .handler(
+            "OpB",
+            FnHandler::new(|_body: Bytes| async move {
+                Ok::<Bytes, SoapFault>(Bytes::from_static(b"<OpBResponse/>"))
+            }),
+        )
+        .auth_bypass(["OpA", "OpB"])
+        .build()
+        .expect("multi-service build should succeed");
+
+    let router = svc.into_router();
+    let server = TestServer::new(router);
+
+    // ServiceA registered at /soap/a — WSDL GET must rewrite address to /soap/a
+    let resp = server.get("/soap/a").add_query_param("wsdl", "").await;
+    resp.assert_status_ok();
+    let body = resp.text();
+    assert!(
+        body.contains("/soap/a"),
+        "soap:address location must contain /soap/a, got: {body}"
+    );
+
+    // ServiceB registered at /soap/b — WSDL GET must rewrite address to /soap/b
+    let resp_b = server.get("/soap/b").add_query_param("wsdl", "").await;
+    resp_b.assert_status_ok();
+    let body_b = resp_b.text();
+    assert!(
+        body_b.contains("/soap/b"),
+        "soap:address location must contain /soap/b, got: {body_b}"
+    );
+}
