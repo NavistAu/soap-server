@@ -70,10 +70,11 @@ Plans:
   3. No stale TODO comments remain in src/fault.rs or src/envelope.rs
   4. REQUIREMENTS.md ENV-05/ENV-06 checkboxes are checked and traceability shows Complete
   5. 02-02-SUMMARY.md frontmatter includes FLT-04, FLT-05 in requirements-completed
-**Plans**: 0 plans
+**Plans**: 2 plans
 
 Plans:
-(none yet — run `/gsd:plan-phase 3`)
+- [ ] 03-01-PLAN.md — WSDL GET in multi-service mode + public API re-exports + stale TODO removal
+- [ ] 03-02-PLAN.md — REQUIREMENTS.md checkbox fixes + 02-02-SUMMARY.md frontmatter backfill
 
 ## Progress
 
@@ -84,4 +85,4 @@ Phases execute in numeric order: 1 → 2
 |-------|----------------|--------|-----------|
 | 1. ONVIF-Level Support | 10/10 | Complete    | 2026-04-05 |
 | 2. Full Spec Compliance | 3/3 | Complete   | 2026-04-05 |
-| 3. Audit Gap Closure | 0/0 | Pending    | — |
+| 3. Audit Gap Closure | 0/2 | Pending    | — |
