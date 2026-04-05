@@ -575,4 +575,75 @@ mod tests {
         let fault = result.unwrap_err();
         assert!(fault.reason.contains("Missing Body"), "got: {}", fault.reason);
     }
+
+    // SOAP 1.1 tests
+
+    #[test]
+    fn parse_envelope_soap11() {
+        let xml = r#"<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/">
+  <SOAP-ENV:Body>
+    <op:DoSomething xmlns:op="urn:test"/>
+  </SOAP-ENV:Body>
+</SOAP-ENV:Envelope>"#;
+        let parsed = parse_envelope(xml.as_bytes()).unwrap();
+        assert_eq!(parsed.soap_version, SoapVersion::Soap11);
+        assert!(parsed.header_children.is_empty());
+    }
+
+    #[test]
+    fn parse_envelope_soap11_with_header() {
+        let xml = r#"<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/">
+  <SOAP-ENV:Header>
+    <wsse:Security xmlns:wsse="urn:wssec"/>
+  </SOAP-ENV:Header>
+  <SOAP-ENV:Body>
+    <op:DoSomething xmlns:op="urn:test"/>
+  </SOAP-ENV:Body>
+</SOAP-ENV:Envelope>"#;
+        let parsed = parse_envelope(xml.as_bytes()).unwrap();
+        assert_eq!(parsed.soap_version, SoapVersion::Soap11);
+        assert_eq!(parsed.header_children.len(), 1);
+    }
+
+    #[test]
+    fn parse_envelope_soap11_body_first_child() {
+        let xml = r#"<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/">
+  <SOAP-ENV:Body>
+    <op:DoSomething xmlns:op="urn:test"/>
+  </SOAP-ENV:Body>
+</SOAP-ENV:Envelope>"#;
+        let parsed = parse_envelope(xml.as_bytes()).unwrap();
+        let body_str = std::str::from_utf8(&parsed.body_element).unwrap();
+        assert!(body_str.contains("DoSomething"), "body: {body_str}");
+    }
+
+    #[test]
+    fn serialize_envelope_soap11() {
+        let body = Bytes::from_static(b"<op:Foo/>");
+        let envelope = serialize_envelope(body, SoapVersion::Soap11);
+        let s = std::str::from_utf8(&envelope).unwrap();
+        assert!(
+            s.contains("http://schemas.xmlsoap.org/soap/envelope/"),
+            "envelope should contain SOAP 1.1 namespace, got: {s}"
+        );
+        assert!(s.contains("<env:Body>"), "got: {s}");
+        assert!(s.contains("<op:Foo/>"), "got: {s}");
+        assert!(s.starts_with("<env:Envelope"), "got: {s}");
+    }
+
+    #[test]
+    fn response_content_type_soap11() {
+        assert_eq!(
+            response_content_type(&SoapVersion::Soap11),
+            "text/xml; charset=utf-8"
+        );
+    }
+
+    #[test]
+    fn response_content_type_soap12() {
+        assert_eq!(
+            response_content_type(&SoapVersion::Soap12),
+            "application/soap+xml; charset=utf-8"
+        );
+    }
 }
