@@ -9,7 +9,7 @@ use axum::{
     extract::{Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    routing::post,
+    routing::{get, post},
 };
 use bytes::Bytes;
 use chrono::Utc;
@@ -397,7 +397,7 @@ impl SoapService {
     /// In single-service mode: registers a single POST + GET route at mount_path (backward-compat).
     pub fn into_router(self) -> Router {
         if !self.service_tables.is_empty() {
-            // Multi-service mode: each service gets its own POST route.
+            // Multi-service mode: each service gets its own POST + GET (?wsdl) route.
             let state = Arc::new(self);
             let mut router = Router::new();
             for (path, table) in &state.service_tables {
@@ -408,6 +408,11 @@ impl SoapService {
                 router = router.route(
                     path,
                     post(soap_post_handler_for_route).with_state(route_state),
+                );
+                // Register GET ?wsdl handler with the shared Arc<SoapService> state.
+                router = router.route(
+                    path,
+                    get(wsdl_get_handler).with_state(state.clone()),
                 );
             }
             router
