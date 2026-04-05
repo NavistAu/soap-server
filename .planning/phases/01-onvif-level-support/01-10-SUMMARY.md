@@ -64,7 +64,7 @@ completed: 2026-04-03
 - **Duration:** ~20 min
 - **Started:** 2026-04-03T18:54:00Z
 - **Completed:** 2026-04-03T19:06:50Z
-- **Tasks:** 1 (Task 2 is checkpoint:human-verify — awaiting approval)
+- **Tasks:** 2 (Task 1 auto + Task 2 checkpoint:human-verify — approved)
 - **Files modified:** 6
 
 ## Accomplishments
@@ -82,7 +82,9 @@ completed: 2026-04-03
 
 1. **Task 1: ONVIF end-to-end integration tests** - `93e0278` (feat)
 
-**Plan metadata:** (docs commit follows after Task 2 checkpoint approval)
+2. **Task 2: Phase 1 acceptance gate** - checkpoint approved by human reviewer
+
+**Plan metadata:** (docs commit follows)
 
 ## Files Created/Modified
 
@@ -144,7 +146,7 @@ completed: 2026-04-03
 
 ## Next Phase Readiness
 
-- Phase 1 (ONVIF-Level Support) complete pending Task 2 checkpoint approval
+- Phase 1 (ONVIF-Level Support) **complete** — Task 2 acceptance gate approved
 - All 5 Phase 1 roadmap success criteria verified by automated tests
 - `ServerBuilder::from_wsdl_bytes(wsdl).handler(...).auth(...).build()?.into_router()` public API ready for consumption by onvif-server
 - 175/175 tests pass

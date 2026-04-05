@@ -12,7 +12,7 @@ Two phases follow the natural delivery boundary: Phase 1 delivers everything nee
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: ONVIF-Level Support** - Everything needed to unblock onvif-server: XSD/WSDL parsing, SOAP 1.2 pipeline, WS-Security UsernameToken, axum Router integration
+- [x] **Phase 1: ONVIF-Level Support** - Everything needed to unblock onvif-server: XSD/WSDL parsing, SOAP 1.2 pipeline, WS-Security UsernameToken, axum Router integration (completed 2026-04-05)
 - [ ] **Phase 2: Full Spec Compliance** - SOAP 1.1 envelope and fault support, RPC/encoded dispatch, multiple services per WSDL
 
 ## Phase Details
@@ -60,5 +60,5 @@ Phases execute in numeric order: 1 → 2
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. ONVIF-Level Support | 9/10 | In Progress|  |
+| 1. ONVIF-Level Support | 10/10 | Complete   | 2026-04-05 |
 | 2. Full Spec Compliance | 0/TBD | Not started | - |

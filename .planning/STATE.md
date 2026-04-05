@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: "Checkpoint 01-10 Task 2: Phase 1 acceptance gate — awaiting human verification"
-last_updated: "2026-04-03T19:08:22.975Z"
+stopped_at: Completed 01-10-PLAN.md — Phase 1 (ONVIF-Level Support) complete
+last_updated: "2026-04-05T04:58:36.536Z"
 last_activity: 2026-04-03 — Roadmap restructured from 4 phases to 2 phases
 progress:
   total_phases: 2
   completed_phases: 1
   total_plans: 10
   completed_plans: 10
-  percent: 0
+  percent: 100
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-04-03)
 
 ## Current Position
 
-Phase: 1 of 2 (ONVIF-Level Support)
-Plan: 0 of TBD in current phase
-Status: Ready to plan
-Last activity: 2026-04-03 — Roadmap restructured from 4 phases to 2 phases
+Phase: 1 of 2 (ONVIF-Level Support) — COMPLETE
+Plan: 10 of 10 — all plans executed
+Status: Phase 1 complete — ready for Phase 2 planning
+Last activity: 2026-04-03 — Phase 1 acceptance gate approved; all 175 tests pass
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -60,6 +60,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01-onvif-level-support P08 | 5min | 1 tasks | 1 files |
 | Phase 01-onvif-level-support P09 | 7min | 1 tasks | 4 files |
 | Phase 01-onvif-level-support PP10 | 20min | 1 tasks | 6 files |
+| Phase 01-onvif-level-support P10 | 20min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -99,11 +100,12 @@ None yet.
 
 ### Blockers/Concerns
 
-- [Phase 1]: XSD extension/restriction resolution is the highest-risk piece — must write 3-level inheritance fixtures before implementing. Reference python-zeep `xsd/elements/complex.py`.
-- [Phase 1]: Namespace inheritance loss when extracting body bytes — re-emit all in-scope namespace declarations on the fragment root, or pass a `(bytes, namespace_map)` tuple. API must be decided before HDL-01 is finalized.
+None — Phase 1 complete. Both previously logged blockers were resolved during execution:
+- [x] XSD extension/restriction resolution — two-pass resolver with ComplexExtension flattening implemented in plan 07
+- [x] Namespace inheritance loss — collect_header_children() re-emits envelope xmlns:* bindings on extracted fragments (plan 10)
 
 ## Session Continuity
 
-Last session: 2026-04-03T19:08:07.783Z
-Stopped at: Checkpoint 01-10 Task 2: Phase 1 acceptance gate — awaiting human verification
+Last session: 2026-04-05T04:58:36.534Z
+Stopped at: Completed 01-10-PLAN.md — Phase 1 (ONVIF-Level Support) complete
 Resume file: None
