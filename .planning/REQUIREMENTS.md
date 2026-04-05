@@ -52,8 +52,8 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **DSP-02**: SOAPAction header used as secondary dispatch hint when body element alone is ambiguous
 - [x] **DSP-03**: Dispatch table built at startup from parsed WSDL — no per-request WSDL interpretation
 - [x] **DSP-04**: Unmatched operations produce a SOAP Fault (action not supported)
-- [ ] **DSP-05**: RPC/encoded binding style dispatch (backfill)
-- [ ] **DSP-06**: Multiple services per WSDL — dispatch across services, each with its own operation table (backfill)
+- [x] **DSP-05**: RPC/encoded binding style dispatch (backfill)
+- [x] **DSP-06**: Multiple services per WSDL — dispatch across services, each with its own operation table (backfill)
 
 ### Handler API
 
@@ -144,8 +144,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DSP-02 | Phase 1 | Complete |
 | DSP-03 | Phase 1 | Complete |
 | DSP-04 | Phase 1 | Complete |
-| DSP-05 | Phase 2 | Pending |
-| DSP-06 | Phase 2 | Pending |
+| DSP-05 | Phase 2 | Complete |
+| DSP-06 | Phase 2 | Complete |
 | HDL-01 | Phase 1 | Complete |
 | HDL-02 | Phase 1 | Complete |
 | HDL-03 | Phase 1 | Complete |
