@@ -71,6 +71,36 @@ impl SoapFault {
         )
     }
 
+    /// Serialize to a complete SOAP envelope. Version determines fault structure and code names.
+    /// SOAP 1.2 uses nested Code/Reason (existing to_xml_bytes). SOAP 1.1 uses flat
+    /// faultcode/faultstring per W3C SOAP 1.1 spec Section 4.4.
+    pub fn to_xml_bytes_versioned(&self, version: &crate::wsdl::definitions::SoapVersion) -> Vec<u8> {
+        match version {
+            crate::wsdl::definitions::SoapVersion::Soap12 => self.to_xml_bytes(),
+            crate::wsdl::definitions::SoapVersion::Soap11 => self.to_xml_bytes_v11(),
+        }
+    }
+
+    fn to_xml_bytes_v11(&self) -> Vec<u8> {
+        let ns = "http://schemas.xmlsoap.org/soap/envelope/";
+        let faultcode = match &self.code {
+            FaultCode::Sender => "SOAP-ENV:Client",
+            FaultCode::Receiver => "SOAP-ENV:Server",
+            FaultCode::VersionMismatch => "SOAP-ENV:VersionMismatch",
+            FaultCode::MustUnderstand => "SOAP-ENV:MustUnderstand",
+            // DataEncodingUnknown has no SOAP 1.1 equivalent — map to Server per Apache CXF
+            FaultCode::DataEncodingUnknown => "SOAP-ENV:Server",
+        };
+        let reason = &self.reason;
+        let detail_xml = match &self.detail {
+            Some(detail) => format!("<detail>{detail}</detail>"),
+            None => String::new(),
+        };
+        format!(
+            r#"<SOAP-ENV:Envelope xmlns:SOAP-ENV="{ns}"><SOAP-ENV:Body><SOAP-ENV:Fault><faultcode>{faultcode}</faultcode><faultstring>{reason}</faultstring>{detail_xml}</SOAP-ENV:Fault></SOAP-ENV:Body></SOAP-ENV:Envelope>"#
+        ).into_bytes()
+    }
+
     /// Serialize to a complete SOAP 1.2 envelope XML string.
     /// HTTP status is always 500 per W3C SOAP 1.2 spec Section 7.4.2 (FLT-03).
     pub fn to_xml_bytes(&self) -> Vec<u8> {
@@ -217,5 +247,128 @@ mod tests {
         let xml = String::from_utf8(fault.to_xml_bytes()).unwrap();
         assert!(xml.contains("<env:Value>env:Sender</env:Value>"));
         assert!(xml.contains("urn:SomeAction"));
+    }
+
+    // ── SOAP 1.1 fault tests (TDD RED) ───────────────────────────────────────
+
+    #[test]
+    fn fault_soap11_structure() {
+        let fault = SoapFault::sender("bad");
+        let xml = String::from_utf8(fault.to_xml_bytes_v11()).unwrap();
+        assert!(xml.contains("<faultcode>"), "Expected <faultcode>, got: {xml}");
+        assert!(xml.contains("<faultstring>"), "Expected <faultstring>, got: {xml}");
+        assert!(xml.contains("SOAP-ENV:Fault"), "Expected SOAP-ENV:Fault, got: {xml}");
+        assert!(!xml.contains("<env:Code>"), "Should NOT contain <env:Code>, got: {xml}");
+        assert!(!xml.contains("<env:Reason>"), "Should NOT contain <env:Reason>, got: {xml}");
+    }
+
+    #[test]
+    fn fault_soap11_namespace() {
+        let fault = SoapFault::sender("bad");
+        let xml = String::from_utf8(fault.to_xml_bytes_v11()).unwrap();
+        assert!(
+            xml.contains(r#"xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/""#),
+            "Expected SOAP 1.1 namespace on Envelope, got: {xml}"
+        );
+    }
+
+    #[test]
+    fn fault_soap11_wraps_in_envelope() {
+        let fault = SoapFault::sender("bad");
+        let xml = String::from_utf8(fault.to_xml_bytes_v11()).unwrap();
+        assert!(xml.starts_with("<SOAP-ENV:Envelope"), "Expected SOAP-ENV:Envelope root, got: {xml}");
+        assert!(xml.contains("<SOAP-ENV:Body>"), "Expected <SOAP-ENV:Body>, got: {xml}");
+    }
+
+    #[test]
+    fn fault_code_sender_maps_to_client() {
+        let fault = SoapFault::sender("bad");
+        let xml = String::from_utf8(fault.to_xml_bytes_v11()).unwrap();
+        assert!(
+            xml.contains("<faultcode>SOAP-ENV:Client</faultcode>"),
+            "Expected SOAP-ENV:Client, got: {xml}"
+        );
+    }
+
+    #[test]
+    fn fault_code_receiver_maps_to_server() {
+        let fault = SoapFault::receiver("internal");
+        let xml = String::from_utf8(fault.to_xml_bytes_v11()).unwrap();
+        assert!(
+            xml.contains("<faultcode>SOAP-ENV:Server</faultcode>"),
+            "Expected SOAP-ENV:Server, got: {xml}"
+        );
+    }
+
+    #[test]
+    fn fault_code_version_mismatch_soap11() {
+        let fault = SoapFault::version_mismatch();
+        let xml = String::from_utf8(fault.to_xml_bytes_v11()).unwrap();
+        assert!(
+            xml.contains("<faultcode>SOAP-ENV:VersionMismatch</faultcode>"),
+            "Expected SOAP-ENV:VersionMismatch, got: {xml}"
+        );
+    }
+
+    #[test]
+    fn fault_code_must_understand_soap11() {
+        let fault = SoapFault::must_understand("MyHeader");
+        let xml = String::from_utf8(fault.to_xml_bytes_v11()).unwrap();
+        assert!(
+            xml.contains("<faultcode>SOAP-ENV:MustUnderstand</faultcode>"),
+            "Expected SOAP-ENV:MustUnderstand, got: {xml}"
+        );
+    }
+
+    #[test]
+    fn fault_code_data_encoding_unknown_soap11() {
+        let fault = SoapFault::new(FaultCode::DataEncodingUnknown, "enc error", None);
+        let xml = String::from_utf8(fault.to_xml_bytes_v11()).unwrap();
+        assert!(
+            xml.contains("<faultcode>SOAP-ENV:Server</faultcode>"),
+            "Expected SOAP-ENV:Server (no 1.1 equivalent for DataEncodingUnknown), got: {xml}"
+        );
+    }
+
+    #[test]
+    fn fault_soap11_with_detail() {
+        let fault = SoapFault::new(
+            FaultCode::Receiver,
+            "Internal error",
+            Some("<extra>info</extra>".to_string()),
+        );
+        let xml = String::from_utf8(fault.to_xml_bytes_v11()).unwrap();
+        assert!(
+            xml.contains("<detail><extra>info</extra></detail>"),
+            "Expected <detail> element with content, got: {xml}"
+        );
+    }
+
+    #[test]
+    fn fault_soap11_no_detail_when_none() {
+        let fault = SoapFault::sender("test");
+        let xml = String::from_utf8(fault.to_xml_bytes_v11()).unwrap();
+        assert!(
+            !xml.contains("<detail>"),
+            "Expected no <detail> when detail is None, got: {xml}"
+        );
+    }
+
+    #[test]
+    fn to_xml_bytes_versioned_soap12_calls_existing() {
+        use crate::wsdl::definitions::SoapVersion;
+        let fault = SoapFault::sender("test");
+        let v12 = fault.to_xml_bytes_versioned(&SoapVersion::Soap12);
+        let existing = fault.to_xml_bytes();
+        assert_eq!(v12, existing, "Soap12 path should produce identical output to to_xml_bytes()");
+    }
+
+    #[test]
+    fn to_xml_bytes_versioned_soap11_calls_v11() {
+        use crate::wsdl::definitions::SoapVersion;
+        let fault = SoapFault::sender("test");
+        let v11_versioned = fault.to_xml_bytes_versioned(&SoapVersion::Soap11);
+        let v11_direct = fault.to_xml_bytes_v11();
+        assert_eq!(v11_versioned, v11_direct, "Soap11 path should produce identical output to to_xml_bytes_v11()");
     }
 }
