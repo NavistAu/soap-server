@@ -51,7 +51,12 @@ Plans:
   3. Fault codes map correctly between versions: Sender maps to Client, Receiver maps to Server, and vice versa
   4. A WSDL defining multiple services routes each service's operations to its own dispatch table without collision
   5. An RPC/encoded binding request is dispatched to the correct handler without panicking
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 02-01-PLAN.md — SOAP 1.1 envelope unit tests + fix fault_response() Content-Type
+- [ ] 02-02-PLAN.md — SOAP 1.1 fault serializer (faultcode/faultstring) + versioned fault dispatch + integration tests
+- [ ] 02-03-PLAN.md — RPC dispatch QName synthesis + per-service multi-service routing
 
 ## Progress
 
@@ -61,4 +66,4 @@ Phases execute in numeric order: 1 → 2
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. ONVIF-Level Support | 10/10 | Complete    | 2026-04-05 |
-| 2. Full Spec Compliance | 0/TBD | Not started | - |
+| 2. Full Spec Compliance | 0/3  | Not started | - |
