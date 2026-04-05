@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use axum::{
     Router,
-    extract::{Query, State},
+    extract::{MatchedPath, Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -725,6 +725,7 @@ struct WsdlQuery {
 }
 
 async fn wsdl_get_handler(
+    matched_path: Option<MatchedPath>,
     State(svc): State<Arc<SoapService>>,
     Query(params): Query<WsdlQuery>,
     headers: HeaderMap,
@@ -741,7 +742,14 @@ async fn wsdl_get_handler(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("localhost");
 
-    let server_url = format!("http://{}{}", host, svc.mount_path);
+    // Use the matched route path (per-service in multi-service mode, mount_path in single-service).
+    // MatchedPath is always present when registered via router.route() — use Option as fallback.
+    let path = matched_path
+        .as_ref()
+        .map(|mp| mp.as_str())
+        .unwrap_or(&svc.mount_path);
+
+    let server_url = format!("http://{}{}", host, path);
 
     let rewritten = rewrite_wsdl_address(&svc.wsdl_raw, &server_url);
 
