@@ -43,8 +43,8 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **FLT-01**: Generate spec-correct SOAP 1.2 faults with Code/Value, Reason/Text, and optional Detail
 - [x] **FLT-02**: Support standard fault codes: VersionMismatch, MustUnderstand, DataEncodingUnknown, Sender, Receiver
 - [x] **FLT-03**: Return HTTP 500 for SOAP 1.2 faults (per W3C SOAP 1.2 spec Section 7.4.2)
-- [ ] **FLT-04**: Generate spec-correct SOAP 1.1 faults with faultcode, faultstring, faultactor, detail (backfill)
-- [ ] **FLT-05**: Map fault codes between versions (Sender ↔ Client, Receiver ↔ Server) (backfill)
+- [x] **FLT-04**: Generate spec-correct SOAP 1.1 faults with faultcode, faultstring, faultactor, detail (backfill)
+- [x] **FLT-05**: Map fault codes between versions (Sender ↔ Client, Receiver ↔ Server) (backfill)
 
 ### Dispatch
 
@@ -138,8 +138,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | FLT-01 | Phase 1 | Complete |
 | FLT-02 | Phase 1 | Complete |
 | FLT-03 | Phase 1 | Complete |
-| FLT-04 | Phase 2 | Pending |
-| FLT-05 | Phase 2 | Pending |
+| FLT-04 | Phase 2 | Complete |
+| FLT-05 | Phase 2 | Complete |
 | DSP-01 | Phase 1 | Complete |
 | DSP-02 | Phase 1 | Complete |
 | DSP-03 | Phase 1 | Complete |

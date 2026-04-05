@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Completed 02-full-spec-compliance 02-03-PLAN.md
-last_updated: "2026-04-05T05:51:28.074Z"
+stopped_at: Completed 02-full-spec-compliance 02-02-PLAN.md
+last_updated: "2026-04-05T05:58:07.647Z"
 last_activity: 2026-04-03 — Phase 1 acceptance gate approved; all 175 tests pass
 progress:
   total_phases: 2
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 13
-  completed_plans: 11
+  completed_plans: 13
   percent: 100
 ---
 
@@ -62,6 +62,7 @@ Progress: [██████████] 100%
 | Phase 01-onvif-level-support PP10 | 20min | 1 tasks | 6 files |
 | Phase 01-onvif-level-support P10 | 20min | 2 tasks | 6 files |
 | Phase 02-full-spec-compliance P03 | 10min | 2 tasks | 3 files |
+| Phase 02-full-spec-compliance P02 | 3min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -96,6 +97,9 @@ Recent decisions affecting current work:
 - [Phase 01-onvif-level-support]: FixtureLoader maps by basename — real ONVIF relative paths resolved to tests/fixtures/ files by extracting last path component
 - [Phase 02-full-spec-compliance]: RPC QName synthesized as QName{ns=soap:body.namespace or targetNamespace, local=op_name} at build time in collect_ops_for_service()
 - [Phase 02-full-spec-compliance]: SoapServiceRoute thin struct carries per-service DispatchTable as axum State for multi-service routing; service_tables empty in single-service mode preserving full backward compatibility
+- [Phase 02-full-spec-compliance]: to_xml_bytes_v11() is private; external callers use to_xml_bytes_versioned(&SoapVersion) for version dispatch
+- [Phase 02-full-spec-compliance]: DataEncodingUnknown maps to SOAP-ENV:Server in SOAP 1.1 (no equivalent), matching Apache CXF behavior
+- [Phase 02-full-spec-compliance]: axum-test TestResponse uses as_bytes() not bytes() — confirmed during Task 2 green phase
 
 ### Pending Todos
 
@@ -109,6 +113,6 @@ None — Phase 1 complete. Both previously logged blockers were resolved during 
 
 ## Session Continuity
 
-Last session: 2026-04-05T05:51:28.072Z
-Stopped at: Completed 02-full-spec-compliance 02-03-PLAN.md
+Last session: 2026-04-05T05:58:07.645Z
+Stopped at: Completed 02-full-spec-compliance 02-02-PLAN.md
 Resume file: None
