@@ -86,10 +86,10 @@ Plans:
   1. GET /soap/a?wsdl returns WSDL XML with soap:address location containing /soap/a, not /soap
   2. An automated integration test verifies multi-service WSDL GET returns correct address
   3. 03-02-SUMMARY.md requirements-completed lists correct requirement IDs
-**Plans**: 0 plans
+**Plans**: 1 plan
 
 Plans:
-(none yet — run `/gsd:plan-phase 4`)
+- [ ] 04-01-PLAN.md — Fix wsdl_get_handler address rewrite + integration test + 03-02-SUMMARY.md metadata fix
 
 ## Progress
 
@@ -101,4 +101,4 @@ Phases execute in numeric order: 1 → 2
 | 1. ONVIF-Level Support | 10/10 | Complete    | 2026-04-05 |
 | 2. Full Spec Compliance | 3/3 | Complete   | 2026-04-05 |
 | 3. Audit Gap Closure | 2/2 | Complete   | 2026-04-05 |
-| 4. Multi-Service WSDL Address Fix | 0/0 | Pending    | — |
+| 4. Multi-Service WSDL Address Fix | 0/1 | Pending    | — |
