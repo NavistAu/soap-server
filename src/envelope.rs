@@ -1,4 +1,4 @@
-// TODO: SOAP 1.2 envelope parsing and serialization
+//! SOAP envelope parsing and serialization for SOAP 1.1 and 1.2.
 
 use bytes::Bytes;
 use crate::fault::SoapFault;

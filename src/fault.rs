@@ -1,4 +1,4 @@
-// TODO: SOAP 1.2 fault generation
+//! SOAP fault types and serialization for SOAP 1.1 and 1.2.
 use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq)]
