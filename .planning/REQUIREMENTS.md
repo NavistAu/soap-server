@@ -35,8 +35,8 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **ENV-02**: Serialize SOAP 1.2 response envelope wrapping handler output
 - [x] **ENV-03**: Detect SOAP version from request Content-Type (`application/soap+xml` = 1.2, `text/xml` = 1.1)
 - [x] **ENV-04**: Set correct response Content-Type header matching the request's SOAP version
-- [ ] **ENV-05**: Parse SOAP 1.1 envelope (backfill)
-- [ ] **ENV-06**: Serialize SOAP 1.1 response envelope (backfill)
+- [x] **ENV-05**: Parse SOAP 1.1 envelope (backfill)
+- [x] **ENV-06**: Serialize SOAP 1.1 response envelope (backfill)
 
 ### Fault Generation
 
@@ -133,8 +133,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ENV-02 | Phase 1 | Complete |
 | ENV-03 | Phase 1 | Complete |
 | ENV-04 | Phase 1 | Complete |
-| ENV-05 | Phase 2 | Pending |
-| ENV-06 | Phase 2 | Pending |
+| ENV-05 | Phase 2 | Complete |
+| ENV-06 | Phase 2 | Complete |
 | FLT-01 | Phase 1 | Complete |
 | FLT-02 | Phase 1 | Complete |
 | FLT-03 | Phase 1 | Complete |
@@ -168,4 +168,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-04-03*
-*Last updated: 2026-04-03 — traceability updated after 4-phase to 2-phase restructure*
+*Last updated: 2026-04-05 — ENV-05, ENV-06 marked Complete after Phase 3 audit gap closure*
