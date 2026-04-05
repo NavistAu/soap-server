@@ -85,4 +85,4 @@ Phases execute in numeric order: 1 → 2
 |-------|----------------|--------|-----------|
 | 1. ONVIF-Level Support | 10/10 | Complete    | 2026-04-05 |
 | 2. Full Spec Compliance | 3/3 | Complete   | 2026-04-05 |
-| 3. Audit Gap Closure | 0/2 | Pending    | — |
+| 3. Audit Gap Closure | 1/2 | In Progress|  |
