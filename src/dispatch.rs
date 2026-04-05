@@ -37,6 +37,18 @@ pub struct DispatchTable {
     pub default_handler: Option<Arc<dyn SoapHandler>>,
 }
 
+impl DispatchTable {
+    /// Create an empty dispatch table (no operations, no default handler).
+    /// Used internally in multi-service mode as a placeholder.
+    pub fn empty() -> Self {
+        DispatchTable {
+            by_element: HashMap::new(),
+            by_action: HashMap::new(),
+            default_handler: None,
+        }
+    }
+}
+
 /// Errors that can occur while building the dispatch table (startup-time validation).
 #[derive(Debug, thiserror::Error)]
 pub enum DispatchError {

@@ -20,6 +20,7 @@ use crate::envelope::{detect_soap_version, parse_envelope, response_content_type
 use crate::fault::SoapFault;
 use crate::handler::SoapHandler;
 use crate::qname::QName;
+use crate::wsdl::definitions::SoapVersion;
 use crate::wsdl::resolver::{resolve_wsdl, rewrite_wsdl_address, WsdlLoader};
 use crate::wssec::{nonce_cache::RotatingNonceCache, username_token::validate_username_token};
 use crate::xsd::types::TypeRegistry;
@@ -171,17 +172,102 @@ impl ServerBuilder {
                 .map_err(|e| BuildError::WsdlParse(e.to_string()))?
         };
 
-        // Step 3: Build dispatch table.
-        // Build dispatch table before moving type_registry out of resolved.
-        let dispatch_table = dispatch::build_dispatch_table(&resolved, self.handlers, &self.auth_bypass, self.default_handler)
-            .map_err(|e| match e {
-                DispatchError::UnregisteredOperation(op) => BuildError::UnregisteredOperation(op),
-                DispatchError::UnknownOperation(op) => BuildError::UnknownOperation(op),
-            })?;
+        // Step 3: Build dispatch table(s).
+        // If WSDL has multiple services, build per-service dispatch tables.
+        // Otherwise, build a single dispatch table for backward compatibility.
+        let service_names: Vec<String> = resolved.definition.services.keys().cloned().collect();
+        let is_multi_service = service_names.len() > 1;
+
+        let (dispatch_table, service_tables) = if is_multi_service {
+            // Multi-service mode: build one table per service, mount at per-service path.
+            // The handlers HashMap is shared across services — each service only uses the
+            // handlers for operations it owns. We clone handlers for each service.
+            let mut service_tables: HashMap<String, Arc<DispatchTable>> = HashMap::new();
+            let mut all_ops_in_all_services: HashSet<String> = HashSet::new();
+
+            // First pass: collect which ops belong to each service.
+            for svc_name in &service_names {
+                let svc = resolved.definition.services.get(svc_name).unwrap();
+                for port in &svc.ports {
+                    let binding_local = &port.binding.local_name;
+                    if let Some(binding) = resolved.definition.bindings.get(binding_local) {
+                        for binding_op in &binding.operations {
+                            all_ops_in_all_services.insert(binding_op.name.clone());
+                        }
+                    }
+                }
+            }
+
+            // Verify no handlers registered for unknown operations.
+            for handler_name in self.handlers.keys() {
+                if !all_ops_in_all_services.contains(handler_name) {
+                    return Err(BuildError::UnknownOperation(handler_name.clone()));
+                }
+            }
+
+            for svc_name in &service_names {
+                let svc = resolved.definition.services.get(svc_name).unwrap();
+
+                // Collect ops for this service and build handlers subset.
+                let mut svc_op_names: Vec<String> = Vec::new();
+                for port in &svc.ports {
+                    let binding_local = &port.binding.local_name;
+                    if let Some(binding) = resolved.definition.bindings.get(binding_local) {
+                        for binding_op in &binding.operations {
+                            svc_op_names.push(binding_op.name.clone());
+                        }
+                    }
+                }
+
+                // Build handlers for this service only.
+                let mut svc_handlers: HashMap<String, Arc<dyn SoapHandler>> = HashMap::new();
+                for op_name in &svc_op_names {
+                    if let Some(h) = self.handlers.get(op_name) {
+                        svc_handlers.insert(op_name.clone(), h.clone());
+                    }
+                }
+
+                let table = dispatch::build_dispatch_table_for_service(
+                    svc_name,
+                    &resolved,
+                    svc_handlers,
+                    &self.auth_bypass,
+                    self.default_handler.clone(),
+                ).map_err(|e| match e {
+                    DispatchError::UnregisteredOperation(op) => BuildError::UnregisteredOperation(op),
+                    DispatchError::UnknownOperation(op) => BuildError::UnknownOperation(op),
+                })?;
+
+                // Derive the route path from the first port's address.
+                let path = svc.ports.first()
+                    .map(|p| extract_path_from_url(&p.address))
+                    .unwrap_or_else(|| format!("/{}", svc_name.to_lowercase()));
+
+                service_tables.insert(path, Arc::new(table));
+            }
+
+            // Build a combined table for the dispatch_table field (used for single-route fallback).
+            // Use the first service's table as the primary — in multi-service mode,
+            // routing uses service_tables exclusively.
+            let first_table = service_tables.values().next().cloned()
+                .unwrap_or_else(|| Arc::new(DispatchTable::empty()));
+
+            (first_table, service_tables)
+        } else {
+            // Single-service mode: build one dispatch table, no per-service tables.
+            let table = dispatch::build_dispatch_table(&resolved, self.handlers, &self.auth_bypass, self.default_handler)
+                .map_err(|e| match e {
+                    DispatchError::UnregisteredOperation(op) => BuildError::UnregisteredOperation(op),
+                    DispatchError::UnknownOperation(op) => BuildError::UnknownOperation(op),
+                })?;
+            (Arc::new(table), HashMap::new())
+        };
+
         let type_registry = Arc::new(resolved.type_registry);
 
         Ok(SoapService {
-            dispatch_table: Arc::new(dispatch_table),
+            dispatch_table,
+            service_tables,
             type_registry,
             wsdl_raw: Arc::new(wsdl_bytes),
             auth_fn: self.auth_fn,
@@ -262,11 +348,31 @@ fn normalize_path(path: &std::path::Path) -> std::path::PathBuf {
     normalized
 }
 
+/// Extract the path component from a URL string (e.g., "http://host/soap/ServiceA" → "/soap/ServiceA").
+/// Falls back to "/" if the URL has no path.
+fn extract_path_from_url(url: &str) -> String {
+    if let Some(after_scheme) = url.splitn(2, "://").nth(1) {
+        if let Some(slash_pos) = after_scheme.find('/') {
+            return after_scheme[slash_pos..].to_string();
+        }
+        return "/".to_string();
+    }
+    if url.starts_with('/') {
+        url.to_string()
+    } else {
+        format!("/{url}")
+    }
+}
+
 // ── SoapService ───────────────────────────────────────────────────────────────
 
 /// A fully configured SOAP service that can be converted into an axum Router.
 pub struct SoapService {
     dispatch_table: Arc<DispatchTable>,
+    /// Per-service dispatch tables keyed by route path.
+    /// Non-empty when the WSDL has multiple services (multi-service mode).
+    /// Empty in single-service mode (backward-compat).
+    service_tables: HashMap<String, Arc<DispatchTable>>,
     type_registry: Arc<TypeRegistry>,
     wsdl_raw: Arc<Vec<u8>>,
     auth_fn: Option<Arc<dyn Fn(&str) -> Option<String> + Send + Sync + 'static>>,
@@ -286,14 +392,42 @@ impl std::fmt::Debug for SoapService {
 impl SoapService {
     /// Convert this service into an axum Router with POST (SOAP) and GET (?wsdl) routes.
     /// The returned Router is composable with Router::merge().
+    ///
+    /// In multi-service mode: registers one POST route per service path (from service_tables).
+    /// In single-service mode: registers a single POST + GET route at mount_path (backward-compat).
     pub fn into_router(self) -> Router {
-        let mount_path = self.mount_path.clone();
-        let state = Arc::new(self);
-        Router::new().route(
-            &mount_path,
-            post(soap_post_handler).get(wsdl_get_handler),
-        ).with_state(state)
+        if !self.service_tables.is_empty() {
+            // Multi-service mode: each service gets its own POST route.
+            let state = Arc::new(self);
+            let mut router = Router::new();
+            for (path, table) in &state.service_tables {
+                let route_state = SoapServiceRoute {
+                    svc: state.clone(),
+                    table: table.clone(),
+                };
+                router = router.route(
+                    path,
+                    post(soap_post_handler_for_route).with_state(route_state),
+                );
+            }
+            router
+        } else {
+            // Single-service mode: single route (backward-compat).
+            let mount_path = self.mount_path.clone();
+            let state = Arc::new(self);
+            Router::new().route(
+                &mount_path,
+                post(soap_post_handler).get(wsdl_get_handler),
+            ).with_state(state)
+        }
     }
+}
+
+/// Thin wrapper for per-service route state in multi-service mode.
+#[derive(Clone)]
+struct SoapServiceRoute {
+    svc: Arc<SoapService>,
+    table: Arc<DispatchTable>,
 }
 
 // ── Helper: return a 500 SOAP fault response ──────────────────────────────────
@@ -403,6 +537,114 @@ async fn soap_post_handler(
         .map(|s| s.trim_matches('"'));
 
     let entry = match dispatch::route(&svc.dispatch_table, &body_qname, soap_action) {
+        Ok(e) => e,
+        Err(fault) => return fault_response(fault, envelope.soap_version.clone()),
+    };
+
+    // Step 5: If auth required, validate WS-Security UsernameToken.
+    if entry.auth_required {
+        match find_security_header(&envelope.header_children) {
+            None => {
+                return fault_response(
+                    SoapFault::sender("WS-Security header required but not provided"),
+                    envelope.soap_version.clone(),
+                );
+            }
+            Some(security_bytes) => {
+                let auth_fn = match &svc.auth_fn {
+                    Some(f) => f.clone(),
+                    None => {
+                        return fault_response(
+                            SoapFault::sender(
+                                "Authentication required but no credential store configured",
+                            ),
+                            envelope.soap_version.clone(),
+                        );
+                    }
+                };
+                let mut nonce_cache = svc.nonce_cache.lock().await;
+                let now = Utc::now();
+                if let Err(fault) = validate_username_token(
+                    security_bytes,
+                    auth_fn.as_ref(),
+                    &mut nonce_cache,
+                    svc.timestamp_tolerance_secs,
+                    now,
+                ) {
+                    return fault_response(fault, envelope.soap_version.clone());
+                }
+            }
+        }
+    }
+
+    // Step 6: XSD structural validation.
+    if let Err(fault) = dispatch::validate_request(
+        &envelope.body_element,
+        &svc.type_registry,
+        entry.input_type.as_ref(),
+    ) {
+        return fault_response(fault, envelope.soap_version.clone());
+    }
+
+    // Step 7: Invoke handler.
+    let response_body = match entry.handler.handle(envelope.body_element).await {
+        Ok(bytes) => bytes,
+        Err(fault) => return fault_response(fault, envelope.soap_version.clone()),
+    };
+
+    // Step 8: Serialize into SOAP envelope.
+    let envelope_bytes = serialize_envelope(response_body, soap_version);
+    let content_type_value = response_content_type(&envelope.soap_version);
+
+    (
+        StatusCode::OK,
+        [("Content-Type", content_type_value)],
+        envelope_bytes,
+    )
+        .into_response()
+}
+
+// ── axum handler: POST per-service route (multi-service mode) ─────────────────
+
+async fn soap_post_handler_for_route(
+    State(route_state): State<SoapServiceRoute>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    let svc = &route_state.svc;
+    let table = &route_state.table;
+
+    // Step 1: Detect SOAP version from Content-Type.
+    let content_type = headers
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+
+    let soap_version = match detect_soap_version(content_type) {
+        Ok(v) => v,
+        Err(fault) => return fault_response(fault, SoapVersion::Soap12),
+    };
+
+    // Step 2: Parse envelope.
+    let envelope = match parse_envelope(&body) {
+        Ok(e) => e,
+        Err(fault) => return fault_response(fault, soap_version),
+    };
+
+    // Step 3: Extract body first-child QName.
+    let body_qname = match extract_body_qname(&envelope.body_element) {
+        Ok(q) => q,
+        Err(fault) => return fault_response(fault, envelope.soap_version.clone()),
+    };
+
+    // Step 4: Route using this service's specific dispatch table.
+    let soap_action = headers
+        .get("soapaction")
+        .or_else(|| headers.get("SOAPAction"))
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.trim_matches('"'));
+
+    let entry = match dispatch::route(table, &body_qname, soap_action) {
         Ok(e) => e,
         Err(fault) => return fault_response(fault, envelope.soap_version.clone()),
     };

@@ -5,6 +5,131 @@ use axum_test::TestServer;
 use bytes::Bytes;
 use soap_server::{FaultCode, FnHandler, ServerBuilder, SoapFault};
 
+// ── Multi-service WSDL: ServiceA at /soap/a, ServiceB at /soap/b ──────────────
+const MULTI_SERVICE_WSDL: &[u8] = br#"<?xml version="1.0" encoding="utf-8"?>
+<wsdl:definitions
+    xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+    xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap12/"
+    xmlns:xs="http://www.w3.org/2001/XMLSchema"
+    xmlns:tns="http://example.com/multi"
+    targetNamespace="http://example.com/multi">
+
+    <wsdl:types>
+        <xs:schema targetNamespace="http://example.com/multi" elementFormDefault="qualified">
+            <xs:element name="OpA">
+                <xs:complexType><xs:sequence/></xs:complexType>
+            </xs:element>
+            <xs:element name="OpAResponse">
+                <xs:complexType><xs:sequence/></xs:complexType>
+            </xs:element>
+            <xs:element name="OpB">
+                <xs:complexType><xs:sequence/></xs:complexType>
+            </xs:element>
+            <xs:element name="OpBResponse">
+                <xs:complexType><xs:sequence/></xs:complexType>
+            </xs:element>
+        </xs:schema>
+    </wsdl:types>
+
+    <wsdl:message name="OpARequest">
+        <wsdl:part name="parameters" element="tns:OpA"/>
+    </wsdl:message>
+    <wsdl:message name="OpAResponse">
+        <wsdl:part name="parameters" element="tns:OpAResponse"/>
+    </wsdl:message>
+    <wsdl:message name="OpBRequest">
+        <wsdl:part name="parameters" element="tns:OpB"/>
+    </wsdl:message>
+    <wsdl:message name="OpBResponse">
+        <wsdl:part name="parameters" element="tns:OpBResponse"/>
+    </wsdl:message>
+
+    <wsdl:portType name="PortTypeA">
+        <wsdl:operation name="OpA">
+            <wsdl:input message="tns:OpARequest"/>
+            <wsdl:output message="tns:OpAResponse"/>
+        </wsdl:operation>
+    </wsdl:portType>
+    <wsdl:portType name="PortTypeB">
+        <wsdl:operation name="OpB">
+            <wsdl:input message="tns:OpBRequest"/>
+            <wsdl:output message="tns:OpBResponse"/>
+        </wsdl:operation>
+    </wsdl:portType>
+
+    <wsdl:binding name="BindingA" type="tns:PortTypeA">
+        <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+        <wsdl:operation name="OpA">
+            <soap:operation soapAction="http://example.com/multi/OpA"/>
+            <wsdl:input><soap:body use="literal"/></wsdl:input>
+            <wsdl:output><soap:body use="literal"/></wsdl:output>
+        </wsdl:operation>
+    </wsdl:binding>
+    <wsdl:binding name="BindingB" type="tns:PortTypeB">
+        <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+        <wsdl:operation name="OpB">
+            <soap:operation soapAction="http://example.com/multi/OpB"/>
+            <wsdl:input><soap:body use="literal"/></wsdl:input>
+            <wsdl:output><soap:body use="literal"/></wsdl:output>
+        </wsdl:operation>
+    </wsdl:binding>
+
+    <wsdl:service name="ServiceA">
+        <wsdl:port name="PortA" binding="tns:BindingA">
+            <soap:address location="http://localhost/soap/a"/>
+        </wsdl:port>
+    </wsdl:service>
+    <wsdl:service name="ServiceB">
+        <wsdl:port name="PortB" binding="tns:BindingB">
+            <soap:address location="http://localhost/soap/b"/>
+        </wsdl:port>
+    </wsdl:service>
+</wsdl:definitions>"#;
+
+// ── RPC WSDL: single service with RPC binding ─────────────────────────────────
+const RPC_WSDL: &[u8] = br#"<?xml version="1.0" encoding="utf-8"?>
+<wsdl:definitions
+    xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+    xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap12/"
+    xmlns:xs="http://www.w3.org/2001/XMLSchema"
+    xmlns:tns="http://example.com/rpc"
+    targetNamespace="http://example.com/rpc">
+
+    <wsdl:types>
+        <xs:schema targetNamespace="http://example.com/rpc" elementFormDefault="qualified">
+        </xs:schema>
+    </wsdl:types>
+
+    <wsdl:message name="GetDataRequest">
+        <wsdl:part name="parameters" type="xs:string"/>
+    </wsdl:message>
+    <wsdl:message name="GetDataResponse">
+        <wsdl:part name="result" type="xs:string"/>
+    </wsdl:message>
+
+    <wsdl:portType name="RpcPortType">
+        <wsdl:operation name="GetData">
+            <wsdl:input message="tns:GetDataRequest"/>
+            <wsdl:output message="tns:GetDataResponse"/>
+        </wsdl:operation>
+    </wsdl:portType>
+
+    <wsdl:binding name="RpcBinding" type="tns:RpcPortType">
+        <soap:binding style="rpc" transport="http://schemas.xmlsoap.org/soap/http"/>
+        <wsdl:operation name="GetData">
+            <soap:operation soapAction="http://example.com/rpc/GetData"/>
+            <wsdl:input><soap:body use="encoded" namespace="http://example.com/rpc"/></wsdl:input>
+            <wsdl:output><soap:body use="encoded" namespace="http://example.com/rpc"/></wsdl:output>
+        </wsdl:operation>
+    </wsdl:binding>
+
+    <wsdl:service name="RpcService">
+        <wsdl:port name="RpcPort" binding="tns:RpcBinding">
+            <soap:address location="http://localhost/soap/rpc"/>
+        </wsdl:port>
+    </wsdl:service>
+</wsdl:definitions>"#;
+
 // Minimal WSDL bytes with one operation (GetSystemDateAndTime) for testing.
 // Uses a simple inline schema so resolve_wsdl completes without external imports.
 const TEST_WSDL: &[u8] = br#"<?xml version="1.0" encoding="utf-8"?>
@@ -364,4 +489,110 @@ async fn get_without_wsdl_param_returns_404() {
 
     let resp = server.get("/soap").await;
     resp.assert_status(axum::http::StatusCode::NOT_FOUND);
+}
+
+// ── Test 7: Multi-service routing — each service path routes to its own handler ──
+
+#[tokio::test]
+async fn multi_service_routing() {
+    // Build two-service WSDL. Each service gets its own dispatch table and route path.
+    let svc = ServerBuilder::from_wsdl_bytes(MULTI_SERVICE_WSDL)
+        .handler(
+            "OpA",
+            FnHandler::new(|_body: Bytes| async move {
+                Ok::<Bytes, SoapFault>(Bytes::from_static(b"<tns:OpAResponse xmlns:tns=\"http://example.com/multi\"/>"))
+            }),
+        )
+        .handler(
+            "OpB",
+            FnHandler::new(|_body: Bytes| async move {
+                Ok::<Bytes, SoapFault>(Bytes::from_static(b"<tns:OpBResponse xmlns:tns=\"http://example.com/multi\"/>"))
+            }),
+        )
+        .auth_bypass(["OpA", "OpB"])
+        .build()
+        .expect("ServerBuilder::build() should succeed for multi-service WSDL");
+
+    let router = svc.into_router();
+    let server = TestServer::new(router);
+
+    // POST to /soap/a with ServiceA's operation (OpA) → 200
+    let body_a = format!(
+        r#"<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope" xmlns:tns="http://example.com/multi"><env:Body><tns:OpA/></env:Body></env:Envelope>"#
+    );
+    let resp = server
+        .post("/soap/a")
+        .bytes(axum::body::Bytes::from(body_a.into_bytes()))
+        .content_type("application/soap+xml")
+        .await;
+    resp.assert_status_ok();
+    let text = resp.text();
+    assert!(text.contains("OpAResponse"), "Expected OpAResponse, got: {text}");
+
+    // POST to /soap/b with ServiceB's operation (OpB) → 200
+    let body_b = format!(
+        r#"<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope" xmlns:tns="http://example.com/multi"><env:Body><tns:OpB/></env:Body></env:Envelope>"#
+    );
+    let resp = server
+        .post("/soap/b")
+        .bytes(axum::body::Bytes::from(body_b.into_bytes()))
+        .content_type("application/soap+xml")
+        .await;
+    resp.assert_status_ok();
+    let text = resp.text();
+    assert!(text.contains("OpBResponse"), "Expected OpBResponse, got: {text}");
+
+    // POST to /soap/a with ServiceB's operation (OpB) → 500 fault (not found in ServiceA's table)
+    let body_b_wrong_path = format!(
+        r#"<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope" xmlns:tns="http://example.com/multi"><env:Body><tns:OpB/></env:Body></env:Envelope>"#
+    );
+    let resp = server
+        .post("/soap/a")
+        .bytes(axum::body::Bytes::from(body_b_wrong_path.into_bytes()))
+        .content_type("application/soap+xml")
+        .await;
+    resp.assert_status(axum::http::StatusCode::INTERNAL_SERVER_ERROR);
+    let text = resp.text();
+    assert!(text.contains("env:Fault"), "Expected SOAP fault, got: {text}");
+}
+
+// ── Test 8: RPC dispatch integration ─────────────────────────────────────────────
+
+#[tokio::test]
+async fn rpc_dispatch_integration() {
+    // Build a single-service WSDL with RPC binding.
+    // The dispatch QName is derived from (soap:body namespace, operation name).
+    let svc = ServerBuilder::from_wsdl_bytes(RPC_WSDL)
+        .handler(
+            "GetData",
+            FnHandler::new(|_body: Bytes| async move {
+                Ok::<Bytes, SoapFault>(Bytes::from_static(b"<GetDataResponse><result>ok</result></GetDataResponse>"))
+            }),
+        )
+        .auth_bypass(["GetData"])
+        .build()
+        .expect("ServerBuilder::build() should succeed for RPC WSDL");
+
+    let router = svc.into_router();
+    let server = TestServer::new(router);
+
+    // POST a SOAP 1.2 envelope whose body wrapper element matches (soap:body namespace, op name)
+    // The RPC dispatch QName is QName{ns="http://example.com/rpc", local="GetData"}
+    let body = r#"<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope">
+        <env:Body>
+            <rpc:GetData xmlns:rpc="http://example.com/rpc"/>
+        </env:Body>
+    </env:Envelope>"#;
+
+    // In single-service mode, the server is mounted at the default /soap path.
+    // The WSDL's soap:address location is metadata only — the actual route is mount_path.
+    let resp = server
+        .post("/soap")
+        .bytes(axum::body::Bytes::from(body.as_bytes().to_vec()))
+        .content_type("application/soap+xml")
+        .await;
+
+    resp.assert_status_ok();
+    let text = resp.text();
+    assert!(text.contains("GetDataResponse"), "Expected GetDataResponse, got: {text}");
 }
