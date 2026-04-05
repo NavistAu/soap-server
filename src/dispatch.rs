@@ -8,6 +8,7 @@ use crate::fault::SoapFault;
 use crate::qname::QName;
 use crate::xsd::types::{TypeRegistry, ComplexContent};
 use crate::wsdl::resolver::ResolvedWsdl;
+use crate::wsdl::definitions::BindingStyle;
 
 /// A single routing entry — holds the handler plus metadata needed by the pipeline.
 pub struct DispatchEntry {
@@ -61,46 +62,111 @@ pub fn build_dispatch_table(
     auth_bypass: &HashSet<String>,
     default_handler: Option<Arc<dyn SoapHandler>>,
 ) -> Result<DispatchTable, DispatchError> {
-    let mut by_element: HashMap<QName, DispatchEntry> = HashMap::new();
-    let mut by_action: HashMap<String, DispatchEntry> = HashMap::new();
+    let unique_ops = collect_ops_for_service(None, resolved);
+    build_dispatch_table_from_ops(unique_ops, resolved, handlers, auth_bypass, default_handler)
+}
 
-    // Track which handler names are consumed (to detect handlers with no WSDL operation).
-    let mut consumed_handlers: HashSet<String> = HashSet::new();
+/// Build a dispatch table for a single named service.
+///
+/// Only operations reachable through `service_name`'s ports and bindings are included.
+/// Useful when a WSDL defines multiple services and each service mounts on a distinct path.
+///
+/// Semantics are otherwise identical to `build_dispatch_table`.
+pub fn build_dispatch_table_for_service(
+    service_name: &str,
+    resolved: &ResolvedWsdl,
+    handlers: HashMap<String, Arc<dyn SoapHandler>>,
+    auth_bypass: &HashSet<String>,
+    default_handler: Option<Arc<dyn SoapHandler>>,
+) -> Result<DispatchTable, DispatchError> {
+    let unique_ops = collect_ops_for_service(Some(service_name), resolved);
+    build_dispatch_table_from_ops(unique_ops, resolved, handlers, auth_bypass, default_handler)
+}
 
-    // Collect all operations from all bindings (WSDL may have multiple services/ports/bindings).
-    let mut all_binding_ops: Vec<(String, String)> = Vec::new(); // (op_name, soap_action)
+/// Collect unique operations for all services (service_name = None) or a specific service.
+/// Returns Vec of (op_name, soap_action, binding_style, rpc_namespace).
+fn collect_ops_for_service(
+    service_name: Option<&str>,
+    resolved: &ResolvedWsdl,
+) -> Vec<(String, String, BindingStyle, Option<String>)> {
+    let mut all_binding_ops: Vec<(String, String, BindingStyle, Option<String>)> = Vec::new();
 
-    for (_service_name, service) in &resolved.definition.services {
+    let service_iter: Vec<&crate::wsdl::definitions::Service> = match service_name {
+        Some(name) => resolved.definition.services.get(name).into_iter().collect(),
+        None => resolved.definition.services.values().collect(),
+    };
+
+    for service in service_iter {
         for port in &service.ports {
-            // Resolve the binding name from the QName (local_name is sufficient here).
             let binding_local = &port.binding.local_name;
             if let Some(binding) = resolved.definition.bindings.get(binding_local) {
+                let style = binding.soap_binding.style.clone();
                 for binding_op in &binding.operations {
-                    all_binding_ops.push((binding_op.name.clone(), binding_op.soap_action.clone()));
+                    let rpc_ns = if style == BindingStyle::Rpc {
+                        binding_op.input.body.namespace.clone()
+                            .or_else(|| Some(resolved.definition.target_namespace.clone()))
+                    } else {
+                        None
+                    };
+                    all_binding_ops.push((
+                        binding_op.name.clone(),
+                        binding_op.soap_action.clone(),
+                        style.clone(),
+                        rpc_ns,
+                    ));
                 }
             }
         }
     }
 
-    // If no services defined, fall back to iterating all bindings directly.
-    if all_binding_ops.is_empty() {
+    // If no services defined (and collecting for all), fall back to all bindings directly.
+    if all_binding_ops.is_empty() && service_name.is_none() {
         for (_binding_name, binding) in &resolved.definition.bindings {
+            let style = binding.soap_binding.style.clone();
             for binding_op in &binding.operations {
-                all_binding_ops.push((binding_op.name.clone(), binding_op.soap_action.clone()));
+                let rpc_ns = if style == BindingStyle::Rpc {
+                    binding_op.input.body.namespace.clone()
+                        .or_else(|| Some(resolved.definition.target_namespace.clone()))
+                } else {
+                    None
+                };
+                all_binding_ops.push((
+                    binding_op.name.clone(),
+                    binding_op.soap_action.clone(),
+                    style.clone(),
+                    rpc_ns,
+                ));
             }
         }
     }
 
     // Deduplicate (same operation may appear in multiple ports/bindings).
     let mut seen_ops: HashSet<String> = HashSet::new();
-    let mut unique_ops: Vec<(String, String)> = Vec::new();
-    for (op_name, soap_action) in all_binding_ops {
+    let mut unique_ops: Vec<(String, String, BindingStyle, Option<String>)> = Vec::new();
+    for (op_name, soap_action, style, rpc_ns) in all_binding_ops {
         if seen_ops.insert(op_name.clone()) {
-            unique_ops.push((op_name, soap_action));
+            unique_ops.push((op_name, soap_action, style, rpc_ns));
         }
     }
 
-    for (op_name, soap_action) in unique_ops {
+    unique_ops
+}
+
+/// Internal helper: build a DispatchTable from a pre-collected list of unique operations.
+fn build_dispatch_table_from_ops(
+    unique_ops: Vec<(String, String, BindingStyle, Option<String>)>,
+    resolved: &ResolvedWsdl,
+    handlers: HashMap<String, Arc<dyn SoapHandler>>,
+    auth_bypass: &HashSet<String>,
+    default_handler: Option<Arc<dyn SoapHandler>>,
+) -> Result<DispatchTable, DispatchError> {
+    let mut by_element: HashMap<QName, DispatchEntry> = HashMap::new();
+    let mut by_action: HashMap<String, DispatchEntry> = HashMap::new();
+
+    // Track which handler names are consumed (to detect handlers with no WSDL operation).
+    let mut consumed_handlers: HashSet<String> = HashSet::new();
+
+    for (op_name, soap_action, style, rpc_ns) in unique_ops {
         let handler = match handlers.get(&op_name) {
             Some(h) => h.clone(),
             None => match &default_handler {
@@ -113,10 +179,15 @@ pub fn build_dispatch_table(
 
         let auth_required = !auth_bypass.contains(&op_name);
 
-        // Find the input element QName for this operation.
-        // In document/literal style: look up the message in port_types, then in messages map,
-        // then take the element QName of the first part.
-        let input_type = resolve_input_element(resolved, &op_name);
+        // Determine the input dispatch QName.
+        // RPC style: synthesize QName from (soap:body namespace or targetNamespace, operation name).
+        // Document style: resolve from message part element reference.
+        let input_type = if style == BindingStyle::Rpc {
+            let ns = rpc_ns.as_deref().unwrap_or(&resolved.definition.target_namespace);
+            Some(QName::new(ns, &op_name))
+        } else {
+            resolve_input_element(resolved, &op_name)
+        };
 
         let entry_for_element = DispatchEntry {
             handler: handler.clone(),
@@ -134,7 +205,6 @@ pub fn build_dispatch_table(
             by_element.insert(qn.clone(), entry_for_element);
         } else {
             // No element reference — still insert by soap action so we can route by SOAPAction.
-            // We'll always have the by_action entry regardless.
             drop(entry_for_element);
         }
 
@@ -675,5 +745,342 @@ mod tests {
         let table = build_dispatch_table(&resolved, handlers, &HashSet::new(), None).unwrap();
         let entry = route(&table, &elem_qname, None).unwrap();
         assert!(entry.auth_required);
+    }
+
+    // ── RPC binding tests ─────────────────────────────────────────────────────
+
+    /// Build a minimal ResolvedWsdl with RPC-style binding.
+    fn make_resolved_wsdl_rpc(
+        op_name: &str,
+        soap_action: &str,
+        rpc_namespace: Option<&str>,
+    ) -> ResolvedWsdl {
+        let target_ns = "http://example.com/service".to_string();
+        let msg_name = format!("{}Request", op_name);
+
+        // Message: one part with type_ref (RPC style — no element ref)
+        let part = MessagePart {
+            name: "parameters".to_string(),
+            element: None,
+            type_ref: Some(QName::new("http://www.w3.org/2001/XMLSchema", "string")),
+        };
+        let message = Message {
+            name: msg_name.clone(),
+            parts: vec![part],
+        };
+
+        // PortType operation
+        let pt_op = Operation {
+            name: op_name.to_string(),
+            input: Some(OperationMessage {
+                name: None,
+                message: QName::local(&msg_name),
+            }),
+            output: None,
+            faults: vec![],
+            style: OperationStyle::RequestResponse,
+        };
+        let port_type = PortType {
+            name: "TestPortType".to_string(),
+            operations: vec![pt_op],
+        };
+
+        // Binding operation with RPC-specific namespace
+        let binding_op = BindingOperation {
+            name: op_name.to_string(),
+            soap_action: soap_action.to_string(),
+            input: BindingMessage {
+                body: SoapBody {
+                    use_attr: UseStyle::Encoded,
+                    namespace: rpc_namespace.map(|s| s.to_string()),
+                    encoding_style: None,
+                },
+                headers: vec![],
+            },
+            output: BindingMessage {
+                body: SoapBody {
+                    use_attr: UseStyle::Encoded,
+                    namespace: rpc_namespace.map(|s| s.to_string()),
+                    encoding_style: None,
+                },
+                headers: vec![],
+            },
+        };
+        let binding = Binding {
+            name: "TestBinding".to_string(),
+            port_type: QName::local("TestPortType"),
+            soap_binding: SoapBinding {
+                style: BindingStyle::Rpc,
+                transport: "http://schemas.xmlsoap.org/soap/http".to_string(),
+                soap_version: SoapVersion::Soap12,
+            },
+            operations: vec![binding_op],
+        };
+
+        // Service + Port
+        let port = Port {
+            name: "TestPort".to_string(),
+            binding: QName::local("TestBinding"),
+            address: "http://localhost/service".to_string(),
+        };
+        let service = Service {
+            name: "TestService".to_string(),
+            ports: vec![port],
+        };
+
+        let mut messages = HashMap::new();
+        messages.insert(msg_name, message);
+        let mut port_types = HashMap::new();
+        port_types.insert("TestPortType".to_string(), port_type);
+        let mut bindings = HashMap::new();
+        bindings.insert("TestBinding".to_string(), binding);
+        let mut services = HashMap::new();
+        services.insert("TestService".to_string(), service);
+
+        let definition = WsdlDefinition {
+            target_namespace: target_ns,
+            imports: vec![],
+            types: TypesSection::default(),
+            messages,
+            port_types,
+            bindings,
+            services,
+        };
+
+        ResolvedWsdl {
+            definition,
+            type_registry: crate::xsd::types::TypeRegistry::new(),
+            raw_bytes: vec![],
+        }
+    }
+
+    /// Build a ResolvedWsdl with two services (ServiceA and ServiceB), each with their own
+    /// binding and operations.
+    fn make_resolved_wsdl_two_services() -> ResolvedWsdl {
+        let target_ns = "http://example.com/multi".to_string();
+
+        // Messages
+        let msg_a = Message {
+            name: "OpARequest".to_string(),
+            parts: vec![MessagePart {
+                name: "parameters".to_string(),
+                element: Some(QName::new("http://example.com/multi", "OpA")),
+                type_ref: None,
+            }],
+        };
+        let msg_b = Message {
+            name: "OpBRequest".to_string(),
+            parts: vec![MessagePart {
+                name: "parameters".to_string(),
+                element: Some(QName::new("http://example.com/multi", "OpB")),
+                type_ref: None,
+            }],
+        };
+
+        // PortTypes
+        let pt_a = PortType {
+            name: "PortTypeA".to_string(),
+            operations: vec![Operation {
+                name: "OpA".to_string(),
+                input: Some(OperationMessage {
+                    name: None,
+                    message: QName::local("OpARequest"),
+                }),
+                output: None,
+                faults: vec![],
+                style: OperationStyle::RequestResponse,
+            }],
+        };
+        let pt_b = PortType {
+            name: "PortTypeB".to_string(),
+            operations: vec![Operation {
+                name: "OpB".to_string(),
+                input: Some(OperationMessage {
+                    name: None,
+                    message: QName::local("OpBRequest"),
+                }),
+                output: None,
+                faults: vec![],
+                style: OperationStyle::RequestResponse,
+            }],
+        };
+
+        // Bindings
+        let binding_a = Binding {
+            name: "BindingA".to_string(),
+            port_type: QName::local("PortTypeA"),
+            soap_binding: SoapBinding {
+                style: BindingStyle::Document,
+                transport: "http://schemas.xmlsoap.org/soap/http".to_string(),
+                soap_version: SoapVersion::Soap12,
+            },
+            operations: vec![BindingOperation {
+                name: "OpA".to_string(),
+                soap_action: "urn:OpA".to_string(),
+                input: BindingMessage {
+                    body: SoapBody {
+                        use_attr: UseStyle::Literal,
+                        namespace: None,
+                        encoding_style: None,
+                    },
+                    headers: vec![],
+                },
+                output: BindingMessage {
+                    body: SoapBody {
+                        use_attr: UseStyle::Literal,
+                        namespace: None,
+                        encoding_style: None,
+                    },
+                    headers: vec![],
+                },
+            }],
+        };
+        let binding_b = Binding {
+            name: "BindingB".to_string(),
+            port_type: QName::local("PortTypeB"),
+            soap_binding: SoapBinding {
+                style: BindingStyle::Document,
+                transport: "http://schemas.xmlsoap.org/soap/http".to_string(),
+                soap_version: SoapVersion::Soap12,
+            },
+            operations: vec![BindingOperation {
+                name: "OpB".to_string(),
+                soap_action: "urn:OpB".to_string(),
+                input: BindingMessage {
+                    body: SoapBody {
+                        use_attr: UseStyle::Literal,
+                        namespace: None,
+                        encoding_style: None,
+                    },
+                    headers: vec![],
+                },
+                output: BindingMessage {
+                    body: SoapBody {
+                        use_attr: UseStyle::Literal,
+                        namespace: None,
+                        encoding_style: None,
+                    },
+                    headers: vec![],
+                },
+            }],
+        };
+
+        // Services
+        let service_a = Service {
+            name: "ServiceA".to_string(),
+            ports: vec![Port {
+                name: "PortA".to_string(),
+                binding: QName::local("BindingA"),
+                address: "http://localhost/soap/a".to_string(),
+            }],
+        };
+        let service_b = Service {
+            name: "ServiceB".to_string(),
+            ports: vec![Port {
+                name: "PortB".to_string(),
+                binding: QName::local("BindingB"),
+                address: "http://localhost/soap/b".to_string(),
+            }],
+        };
+
+        let mut messages = HashMap::new();
+        messages.insert("OpARequest".to_string(), msg_a);
+        messages.insert("OpBRequest".to_string(), msg_b);
+        let mut port_types = HashMap::new();
+        port_types.insert("PortTypeA".to_string(), pt_a);
+        port_types.insert("PortTypeB".to_string(), pt_b);
+        let mut bindings = HashMap::new();
+        bindings.insert("BindingA".to_string(), binding_a);
+        bindings.insert("BindingB".to_string(), binding_b);
+        let mut services = HashMap::new();
+        services.insert("ServiceA".to_string(), service_a);
+        services.insert("ServiceB".to_string(), service_b);
+
+        let definition = WsdlDefinition {
+            target_namespace: target_ns,
+            imports: vec![],
+            types: TypesSection::default(),
+            messages,
+            port_types,
+            bindings,
+            services,
+        };
+
+        ResolvedWsdl {
+            definition,
+            type_registry: crate::xsd::types::TypeRegistry::new(),
+            raw_bytes: vec![],
+        }
+    }
+
+    #[test]
+    fn build_dispatch_table_rpc_binding() {
+        let resolved = make_resolved_wsdl_rpc("GetOp", "urn:GetOp", Some("http://example.com/svc"));
+
+        let mut handlers = HashMap::new();
+        handlers.insert("GetOp".to_string(), mock_handler("GetOp"));
+
+        let table = build_dispatch_table(&resolved, handlers, &HashSet::new(), None).unwrap();
+
+        // RPC dispatch key: (soap:body namespace, operation name)
+        let rpc_qname = QName::new("http://example.com/svc", "GetOp");
+        let result = route(&table, &rpc_qname, None);
+        assert!(result.is_ok(), "Expected RPC QName to route successfully, got: {:?}", result);
+    }
+
+    #[test]
+    fn rpc_dispatch_by_wrapper_element() {
+        let resolved = make_resolved_wsdl_rpc("GetOp", "urn:GetOp", Some("http://example.com/svc"));
+
+        let mut handlers = HashMap::new();
+        handlers.insert("GetOp".to_string(), mock_handler("GetOp"));
+
+        let table = build_dispatch_table(&resolved, handlers, &HashSet::new(), None).unwrap();
+
+        // Confirm the entry is in by_element keyed on the synthesized QName
+        let rpc_qname = QName::new("http://example.com/svc", "GetOp");
+        let result = route(&table, &rpc_qname, None);
+        assert!(result.is_ok(), "route by synthesized RPC QName should return Ok");
+    }
+
+    #[test]
+    fn build_dispatch_table_rpc_missing_namespace_falls_back_to_target_ns() {
+        // When soap:body.namespace is None for an RPC binding, fall back to WSDL targetNamespace
+        let resolved = make_resolved_wsdl_rpc("GetOp", "urn:GetOp", None);
+        let target_ns = resolved.definition.target_namespace.clone();
+
+        let mut handlers = HashMap::new();
+        handlers.insert("GetOp".to_string(), mock_handler("GetOp"));
+
+        let table = build_dispatch_table(&resolved, handlers, &HashSet::new(), None).unwrap();
+
+        // Should be keyed by (targetNamespace, opName)
+        let fallback_qname = QName::new(&target_ns, "GetOp");
+        let result = route(&table, &fallback_qname, None);
+        assert!(result.is_ok(), "RPC without namespace should fall back to targetNamespace, got: {:?}", result);
+    }
+
+    #[test]
+    fn build_dispatch_table_for_service_isolates_operations() {
+        let resolved = make_resolved_wsdl_two_services();
+
+        let op_a_qname = QName::new("http://example.com/multi", "OpA");
+        let op_b_qname = QName::new("http://example.com/multi", "OpB");
+
+        let mut handlers_a = HashMap::new();
+        handlers_a.insert("OpA".to_string(), mock_handler("OpA"));
+
+        let mut handlers_b = HashMap::new();
+        handlers_b.insert("OpB".to_string(), mock_handler("OpB"));
+
+        let table_a = build_dispatch_table_for_service("ServiceA", &resolved, handlers_a, &HashSet::new(), None).unwrap();
+        let table_b = build_dispatch_table_for_service("ServiceB", &resolved, handlers_b, &HashSet::new(), None).unwrap();
+
+        // ServiceA table contains OpA
+        assert!(route(&table_a, &op_a_qname, None).is_ok(), "ServiceA should route OpA");
+        // ServiceB table contains OpB
+        assert!(route(&table_b, &op_b_qname, None).is_ok(), "ServiceB should route OpB");
+        // ServiceA table does NOT contain OpB
+        assert!(route(&table_a, &op_b_qname, None).is_err(), "ServiceA should NOT route OpB");
     }
 }

@@ -298,12 +298,13 @@ impl SoapService {
 
 // ── Helper: return a 500 SOAP fault response ──────────────────────────────────
 
-fn fault_response(fault: SoapFault) -> Response {
+fn fault_response(fault: SoapFault, version: crate::wsdl::definitions::SoapVersion) -> Response {
     let bytes = fault.to_xml_bytes();
+    let ct = response_content_type(&version);
     (
         StatusCode::INTERNAL_SERVER_ERROR,
         [
-            ("Content-Type", "application/soap+xml; charset=utf-8"),
+            ("Content-Type", ct),
         ],
         bytes,
     )
@@ -379,19 +380,19 @@ async fn soap_post_handler(
 
     let soap_version = match detect_soap_version(content_type) {
         Ok(v) => v,
-        Err(fault) => return fault_response(fault),
+        Err(fault) => return fault_response(fault, crate::wsdl::definitions::SoapVersion::Soap12),
     };
 
     // Step 2: Parse envelope.
     let envelope = match parse_envelope(&body) {
         Ok(e) => e,
-        Err(fault) => return fault_response(fault),
+        Err(fault) => return fault_response(fault, soap_version),
     };
 
     // Step 3: Extract body first-child QName.
     let body_qname = match extract_body_qname(&envelope.body_element) {
         Ok(q) => q,
-        Err(fault) => return fault_response(fault),
+        Err(fault) => return fault_response(fault, envelope.soap_version.clone()),
     };
 
     // Step 4: Route to dispatch entry.
@@ -403,24 +404,28 @@ async fn soap_post_handler(
 
     let entry = match dispatch::route(&svc.dispatch_table, &body_qname, soap_action) {
         Ok(e) => e,
-        Err(fault) => return fault_response(fault),
+        Err(fault) => return fault_response(fault, envelope.soap_version.clone()),
     };
 
     // Step 5: If auth required, validate WS-Security UsernameToken.
     if entry.auth_required {
         match find_security_header(&envelope.header_children) {
             None => {
-                return fault_response(SoapFault::sender(
-                    "WS-Security header required but not provided",
-                ));
+                return fault_response(
+                    SoapFault::sender("WS-Security header required but not provided"),
+                    envelope.soap_version.clone(),
+                );
             }
             Some(security_bytes) => {
                 let auth_fn = match &svc.auth_fn {
                     Some(f) => f.clone(),
                     None => {
-                        return fault_response(SoapFault::sender(
-                            "Authentication required but no credential store configured",
-                        ));
+                        return fault_response(
+                            SoapFault::sender(
+                                "Authentication required but no credential store configured",
+                            ),
+                            envelope.soap_version.clone(),
+                        );
                     }
                 };
                 let mut nonce_cache = svc.nonce_cache.lock().await;
@@ -432,7 +437,7 @@ async fn soap_post_handler(
                     svc.timestamp_tolerance_secs,
                     now,
                 ) {
-                    return fault_response(fault);
+                    return fault_response(fault, envelope.soap_version.clone());
                 }
             }
         }
@@ -444,13 +449,13 @@ async fn soap_post_handler(
         &svc.type_registry,
         entry.input_type.as_ref(),
     ) {
-        return fault_response(fault);
+        return fault_response(fault, envelope.soap_version.clone());
     }
 
     // Step 7: Invoke handler.
     let response_body = match entry.handler.handle(envelope.body_element).await {
         Ok(bytes) => bytes,
-        Err(fault) => return fault_response(fault),
+        Err(fault) => return fault_response(fault, envelope.soap_version.clone()),
     };
 
     // Step 8: Serialize into SOAP envelope.
