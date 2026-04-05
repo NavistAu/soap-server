@@ -15,7 +15,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: ONVIF-Level Support** - Everything needed to unblock onvif-server: XSD/WSDL parsing, SOAP 1.2 pipeline, WS-Security UsernameToken, axum Router integration (completed 2026-04-05)
 - [x] **Phase 2: Full Spec Compliance** - SOAP 1.1 envelope and fault support, RPC/encoded dispatch, multiple services per WSDL (completed 2026-04-05)
 - [x] **Phase 3: Audit Gap Closure** - Multi-service WSDL GET route, public API surface cleanup, stale TODO removal, documentation fixes (completed 2026-04-05)
-- [ ] **Phase 4: Multi-Service WSDL Address Fix** - Fix soap:address rewrite in multi-service WSDL GET, add integration test, fix doc metadata
+- [x] **Phase 4: Multi-Service WSDL Address Fix** - Fix soap:address rewrite in multi-service WSDL GET, add integration test, fix doc metadata (completed 2026-04-05)
 
 ## Phase Details
 
@@ -101,4 +101,4 @@ Phases execute in numeric order: 1 → 2
 | 1. ONVIF-Level Support | 10/10 | Complete    | 2026-04-05 |
 | 2. Full Spec Compliance | 3/3 | Complete   | 2026-04-05 |
 | 3. Audit Gap Closure | 2/2 | Complete   | 2026-04-05 |
-| 4. Multi-Service WSDL Address Fix | 0/1 | Pending    | — |
+| 4. Multi-Service WSDL Address Fix | 1/1 | Complete   | 2026-04-05 |

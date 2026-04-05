@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: Gap closure phase created from v1.0 audit
-stopped_at: Gap closure phase 4 created from v1.0 re-audit
-last_updated: "2026-04-05T06:50:00.000Z"
-last_activity: 2026-04-05 — v1.0 re-audit complete, phase 4 created for WSDL address fix
+status: completed
+stopped_at: Completed 04-wsdl-address-fix 04-01-PLAN.md
+last_updated: "2026-04-05T07:38:20.852Z"
+last_activity: 2026-04-05 — WSDL per-service address fix implemented and tested
 progress:
   total_phases: 4
-  completed_phases: 3
-  total_plans: 15
-  completed_plans: 15
-  percent: 94
+  completed_phases: 4
+  total_plans: 16
+  completed_plans: 16
+  percent: 100
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-03)
 
 **Core value:** Given a WSDL file and handler functions, serve a fully spec-compliant SOAP endpoint with correct envelope parsing, dispatch, fault generation, and WSDL serving.
-**Current focus:** Phase 3 — Audit Gap Closure
+**Current focus:** Phase 4 — WSDL Address Fix (complete)
 
 ## Current Position
 
-Phase: 3 of 3 (Audit Gap Closure) — PENDING
-Plan: 0 of 0 — needs planning
-Status: Gap closure phase created from v1.0 audit
-Last activity: 2026-04-05 — v1.0 audit complete, gap closure phase 3 created
+Phase: 4 of 4 (WSDL Address Fix) — COMPLETE
+Plan: 1 of 1 — complete
+Status: v1.0 complete — all requirements met including WSDL address fix
+Last activity: 2026-04-05 — WSDL per-service address fix implemented and tested
 
-Progress: [████████░░] 87%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -105,6 +105,7 @@ Recent decisions affecting current work:
 - [Phase 03-audit-gap-closure]: ENV-05 and ENV-06 were implemented in Phase 2 (02-01) but left unchecked in REQUIREMENTS.md — marked complete in audit gap closure
 - [Phase 03-audit-gap-closure]: Multi-service WSDL GET uses separate router.route(path, get(wsdl_get_handler).with_state(state.clone())) chained after POST route — axum allows multiple route() calls on the same path with different states
 - [Phase 03-audit-gap-closure]: dispatch module promoted from pub(crate) to pub to enable DispatchTable re-export from crate root
+- [Phase 04-wsdl-address-fix]: Option<MatchedPath> used in wsdl_get_handler — safe fallback to svc.mount_path; in practice MatchedPath always present via router.route()
 
 ### Pending Todos
 
@@ -118,6 +119,6 @@ None — Phase 1 complete. Both previously logged blockers were resolved during 
 
 ## Session Continuity
 
-Last session: 2026-04-05T06:35:57.005Z
-Stopped at: Completed 03-audit-gap-closure 03-01-PLAN.md
+Last session: 2026-04-05T07:38:20.849Z
+Stopped at: Completed 04-wsdl-address-fix 04-01-PLAN.md
 Resume file: None
