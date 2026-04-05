@@ -1,6 +1,7 @@
 ---
 phase: 02-full-spec-compliance
 plan: "02"
+requirements-completed: [FLT-04, FLT-05]
 subsystem: fault
 tags: [soap11, fault-serialization, versioned-dispatch, integration-tests]
 dependency_graph:
