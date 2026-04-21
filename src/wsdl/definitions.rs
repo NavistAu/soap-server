@@ -1,6 +1,6 @@
 // WSDL definition types — Service, Port, Binding, PortType, Operation, Message
-use std::collections::HashMap;
 use crate::qname::QName;
+use std::collections::HashMap;
 
 /// Top-level WSDL 1.1 document.
 #[derive(Debug, Clone)]

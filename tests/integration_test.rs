@@ -317,11 +317,7 @@ async fn post_with_wrong_password_returns_fault_handler_not_called() {
     let router = svc.into_router();
     let server = TestServer::new(router);
 
-    let body = make_soap12_envelope_with_auth(
-        "<tds:GetProfiles/>",
-        "admin",
-        "wrong_password",
-    );
+    let body = make_soap12_envelope_with_auth("<tds:GetProfiles/>", "admin", "wrong_password");
     let resp = server
         .post("/soap")
         .bytes(axum::body::Bytes::from(body.into_bytes()))
@@ -409,9 +405,8 @@ async fn post_unknown_operation_returns_sender_fault() {
     let server = TestServer::new(router);
 
     // UnknownOperation is not in the dispatch table
-    let body = make_soap12_envelope(
-        "<tds:UnknownOperation xmlns:tds=\"http://example.com/test\"/>",
-    );
+    let body =
+        make_soap12_envelope("<tds:UnknownOperation xmlns:tds=\"http://example.com/test\"/>");
     let resp = server
         .post("/soap")
         .bytes(axum::body::Bytes::from(body.into_bytes()))
@@ -500,13 +495,17 @@ async fn multi_service_routing() {
         .handler(
             "OpA",
             FnHandler::new(|_body: Bytes| async move {
-                Ok::<Bytes, SoapFault>(Bytes::from_static(b"<tns:OpAResponse xmlns:tns=\"http://example.com/multi\"/>"))
+                Ok::<Bytes, SoapFault>(Bytes::from_static(
+                    b"<tns:OpAResponse xmlns:tns=\"http://example.com/multi\"/>",
+                ))
             }),
         )
         .handler(
             "OpB",
             FnHandler::new(|_body: Bytes| async move {
-                Ok::<Bytes, SoapFault>(Bytes::from_static(b"<tns:OpBResponse xmlns:tns=\"http://example.com/multi\"/>"))
+                Ok::<Bytes, SoapFault>(Bytes::from_static(
+                    b"<tns:OpBResponse xmlns:tns=\"http://example.com/multi\"/>",
+                ))
             }),
         )
         .auth_bypass(["OpA", "OpB"])
@@ -525,7 +524,10 @@ async fn multi_service_routing() {
         .await;
     resp.assert_status_ok();
     let text = resp.text();
-    assert!(text.contains("OpAResponse"), "Expected OpAResponse, got: {text}");
+    assert!(
+        text.contains("OpAResponse"),
+        "Expected OpAResponse, got: {text}"
+    );
 
     // POST to /soap/b with ServiceB's operation (OpB) → 200
     let body_b = r#"<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope" xmlns:tns="http://example.com/multi"><env:Body><tns:OpB/></env:Body></env:Envelope>"#.to_string();
@@ -536,7 +538,10 @@ async fn multi_service_routing() {
         .await;
     resp.assert_status_ok();
     let text = resp.text();
-    assert!(text.contains("OpBResponse"), "Expected OpBResponse, got: {text}");
+    assert!(
+        text.contains("OpBResponse"),
+        "Expected OpBResponse, got: {text}"
+    );
 
     // POST to /soap/a with ServiceB's operation (OpB) → 500 fault (not found in ServiceA's table)
     let body_b_wrong_path = r#"<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope" xmlns:tns="http://example.com/multi"><env:Body><tns:OpB/></env:Body></env:Envelope>"#.to_string();
@@ -547,7 +552,10 @@ async fn multi_service_routing() {
         .await;
     resp.assert_status(axum::http::StatusCode::INTERNAL_SERVER_ERROR);
     let text = resp.text();
-    assert!(text.contains("env:Fault"), "Expected SOAP fault, got: {text}");
+    assert!(
+        text.contains("env:Fault"),
+        "Expected SOAP fault, got: {text}"
+    );
 }
 
 // ── Test 8: SOAP 1.1 end-to-end integration ───────────────────────────────────
@@ -708,7 +716,9 @@ async fn rpc_dispatch_integration() {
         .handler(
             "GetData",
             FnHandler::new(|_body: Bytes| async move {
-                Ok::<Bytes, SoapFault>(Bytes::from_static(b"<GetDataResponse><result>ok</result></GetDataResponse>"))
+                Ok::<Bytes, SoapFault>(Bytes::from_static(
+                    b"<GetDataResponse><result>ok</result></GetDataResponse>",
+                ))
             }),
         )
         .auth_bypass(["GetData"])
@@ -736,7 +746,10 @@ async fn rpc_dispatch_integration() {
 
     resp.assert_status_ok();
     let text = resp.text();
-    assert!(text.contains("GetDataResponse"), "Expected GetDataResponse, got: {text}");
+    assert!(
+        text.contains("GetDataResponse"),
+        "Expected GetDataResponse, got: {text}"
+    );
 }
 
 // ── Test: multi-service GET ?wsdl rewrites address to per-service path ─────────

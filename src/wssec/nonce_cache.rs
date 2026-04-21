@@ -1,7 +1,7 @@
 // Nonce replay cache — prevents replay attacks
+use crate::fault::SoapFault;
 use std::collections::HashSet;
 use std::time::Instant;
-use crate::fault::SoapFault;
 
 /// Two-bucket rotating nonce cache.
 /// Buckets rotate every `half_window` seconds (default: 150s for a 300s total window).
@@ -97,6 +97,9 @@ mod tests {
         // Second rotation — "abc" is dropped (previous is replaced)
         cache.force_rotate();
         // Now "abc" should be accepted again
-        assert!(cache.check_and_insert("abc").is_ok(), "Expected nonce to be accepted after two rotations");
+        assert!(
+            cache.check_and_insert("abc").is_ok(),
+            "Expected nonce to be accepted after two rotations"
+        );
     }
 }

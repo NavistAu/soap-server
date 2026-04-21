@@ -51,15 +51,13 @@ pub struct XsdAttribute {
 }
 
 /// The use attribute for XSD attributes.
-#[derive(Debug, Clone, PartialEq)]
-#[derive(Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum AttributeUse {
     Required,
     #[default]
     Optional,
     Prohibited,
 }
-
 
 /// A named group of attributes (xs:attributeGroup).
 #[derive(Debug, Clone)]

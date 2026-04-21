@@ -1,8 +1,8 @@
 //! SOAP envelope parsing and serialization for SOAP 1.1 and 1.2.
 
-use bytes::Bytes;
 use crate::fault::SoapFault;
 use crate::wsdl::definitions::SoapVersion;
+use bytes::Bytes;
 
 #[derive(Debug)]
 pub struct ParsedEnvelope {
@@ -27,8 +27,8 @@ pub fn detect_soap_version(content_type: &str) -> Result<SoapVersion, SoapFault>
 
 /// Parse a SOAP envelope from raw bytes.
 pub fn parse_envelope(input: &[u8]) -> Result<ParsedEnvelope, SoapFault> {
-    use quick_xml::NsReader;
     use quick_xml::events::Event;
+    use quick_xml::NsReader;
 
     const SOAP12_NS: &[u8] = b"http://www.w3.org/2003/05/soap-envelope";
     const SOAP11_NS: &[u8] = b"http://schemas.xmlsoap.org/soap/envelope/";
@@ -41,7 +41,10 @@ pub fn parse_envelope(input: &[u8]) -> Result<ParsedEnvelope, SoapFault> {
     let mut envelope_ns_bindings: Vec<(String, String)> = Vec::new();
 
     loop {
-        match reader.read_resolved_event().map_err(|e| SoapFault::sender(format!("XML parse error: {e}")))? {
+        match reader
+            .read_resolved_event()
+            .map_err(|e| SoapFault::sender(format!("XML parse error: {e}")))?
+        {
             (_, Event::Eof) => return Err(SoapFault::sender("Missing SOAP Envelope element")),
             (resolved_ns, Event::Start(e)) => {
                 let local = e.local_name();
@@ -63,10 +66,17 @@ pub fn parse_envelope(input: &[u8]) -> Result<ParsedEnvelope, SoapFault> {
                         let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
                         if key.starts_with("xmlns:") {
                             let prefix = key.trim_start_matches("xmlns:").to_string();
-                            let value = std::str::from_utf8(attr.value.as_ref()).unwrap_or("").to_string();
+                            let value = std::str::from_utf8(attr.value.as_ref())
+                                .unwrap_or("")
+                                .to_string();
                             envelope_ns_bindings.push((prefix, value));
                         } else if key == "xmlns" {
-                            envelope_ns_bindings.push((String::new(), std::str::from_utf8(attr.value.as_ref()).unwrap_or("").to_string()));
+                            envelope_ns_bindings.push((
+                                String::new(),
+                                std::str::from_utf8(attr.value.as_ref())
+                                    .unwrap_or("")
+                                    .to_string(),
+                            ));
                         }
                     }
                     break;
@@ -83,7 +93,10 @@ pub fn parse_envelope(input: &[u8]) -> Result<ParsedEnvelope, SoapFault> {
     let mut found_body = false;
 
     loop {
-        match reader.read_resolved_event().map_err(|e| SoapFault::sender(format!("XML parse error: {e}")))? {
+        match reader
+            .read_resolved_event()
+            .map_err(|e| SoapFault::sender(format!("XML parse error: {e}")))?
+        {
             (_, Event::Eof) => break,
             (resolved_ns, Event::Start(e)) => {
                 let ns_bytes = match &resolved_ns {
@@ -99,7 +112,11 @@ pub fn parse_envelope(input: &[u8]) -> Result<ParsedEnvelope, SoapFault> {
                 } else if is_soap_ns && local.as_ref() == b"Body" {
                     found_body = true;
                     // Extract first child of Body
-                    body_element = Some(extract_body_first_child(&mut reader, &envelope_ns_bindings, &soap_version)?);
+                    body_element = Some(extract_body_first_child(
+                        &mut reader,
+                        &envelope_ns_bindings,
+                        &soap_version,
+                    )?);
                     // Skip until Body end
                     skip_to_end(&mut reader, b"Body")?;
                 } else {
@@ -135,7 +152,10 @@ fn collect_header_children(
     let mut current_buf = Vec::new();
 
     loop {
-        match reader.read_resolved_event().map_err(|e| SoapFault::sender(format!("XML parse error: {e}")))? {
+        match reader
+            .read_resolved_event()
+            .map_err(|e| SoapFault::sender(format!("XML parse error: {e}")))?
+        {
             (_, Event::Eof) => return Err(SoapFault::sender("Unexpected EOF in Header")),
             (_, Event::Start(e)) => {
                 if depth == 0 {
@@ -148,11 +168,14 @@ fn collect_header_children(
                     current_buf.extend_from_slice(e.name().as_ref());
 
                     // Collect the element's own attribute keys (to avoid double-declaring).
-                    let mut own_attr_keys: std::collections::HashSet<String> = std::collections::HashSet::new();
+                    let mut own_attr_keys: std::collections::HashSet<String> =
+                        std::collections::HashSet::new();
                     let own_attrs: Vec<_> = e.attributes().filter_map(|a| a.ok()).collect();
                     for attr in &own_attrs {
                         own_attr_keys.insert(
-                            std::str::from_utf8(attr.key.as_ref()).unwrap_or("").to_string()
+                            std::str::from_utf8(attr.key.as_ref())
+                                .unwrap_or("")
+                                .to_string(),
                         );
                     }
 
@@ -264,7 +287,10 @@ fn extract_body_first_child(
 
     // Find the first start element inside Body
     loop {
-        match reader.read_resolved_event().map_err(|e| SoapFault::sender(format!("XML parse error: {e}")))? {
+        match reader
+            .read_resolved_event()
+            .map_err(|e| SoapFault::sender(format!("XML parse error: {e}")))?
+        {
             (_, Event::Eof) => return Err(SoapFault::sender("Missing Body child element")),
             (_, Event::Start(e)) => {
                 // Found first child — build self-contained bytes
@@ -313,14 +339,20 @@ fn extract_body_first_child(
                 // Collect remaining content until matching end tag
                 let mut depth = 1i32;
                 loop {
-                    match reader.read_resolved_event().map_err(|e| SoapFault::sender(format!("XML parse error: {e}")))? {
-                        (_, Event::Eof) => return Err(SoapFault::sender("Unexpected EOF in Body child")),
+                    match reader
+                        .read_resolved_event()
+                        .map_err(|e| SoapFault::sender(format!("XML parse error: {e}")))?
+                    {
+                        (_, Event::Eof) => {
+                            return Err(SoapFault::sender("Unexpected EOF in Body child"))
+                        }
                         (_, Event::Start(e2)) => {
                             depth += 1;
                             buf.extend_from_slice(b"<");
                             buf.extend_from_slice(e2.name().as_ref());
                             for attr in e2.attributes() {
-                                let attr = attr.map_err(|_| SoapFault::sender("Invalid attribute"))?;
+                                let attr =
+                                    attr.map_err(|_| SoapFault::sender("Invalid attribute"))?;
                                 buf.extend_from_slice(b" ");
                                 buf.extend_from_slice(attr.key.as_ref());
                                 buf.extend_from_slice(b"=\"");
@@ -333,7 +365,8 @@ fn extract_body_first_child(
                             buf.extend_from_slice(b"<");
                             buf.extend_from_slice(e2.name().as_ref());
                             for attr in e2.attributes() {
-                                let attr = attr.map_err(|_| SoapFault::sender("Invalid attribute"))?;
+                                let attr =
+                                    attr.map_err(|_| SoapFault::sender("Invalid attribute"))?;
                                 buf.extend_from_slice(b" ");
                                 buf.extend_from_slice(attr.key.as_ref());
                                 buf.extend_from_slice(b"=\"");
@@ -417,7 +450,10 @@ fn skip_to_end(reader: &mut quick_xml::NsReader<&[u8]>, _tag: &[u8]) -> Result<(
     use quick_xml::events::Event;
     let mut depth = 1i32;
     loop {
-        match reader.read_resolved_event().map_err(|e| SoapFault::sender(format!("XML parse error: {e}")))? {
+        match reader
+            .read_resolved_event()
+            .map_err(|e| SoapFault::sender(format!("XML parse error: {e}")))?
+        {
             (_, Event::Eof) => return Err(SoapFault::sender("Unexpected EOF")),
             (_, Event::Start(_)) => depth += 1,
             (_, Event::End(_)) => {
@@ -444,13 +480,11 @@ pub fn serialize_envelope(body: Bytes, version: SoapVersion) -> Bytes {
     };
 
     let mut buf = Vec::new();
-    buf.extend_from_slice(format!(
-        "<{prefix}:Envelope xmlns:{prefix}=\"{ns}\"><{prefix}:Body>"
-    ).as_bytes());
+    buf.extend_from_slice(
+        format!("<{prefix}:Envelope xmlns:{prefix}=\"{ns}\"><{prefix}:Body>").as_bytes(),
+    );
     buf.extend_from_slice(&body);
-    buf.extend_from_slice(format!(
-        "</{prefix}:Body></{prefix}:Envelope>"
-    ).as_bytes());
+    buf.extend_from_slice(format!("</{prefix}:Body></{prefix}:Envelope>").as_bytes());
 
     Bytes::from(buf)
 }
@@ -542,7 +576,8 @@ mod tests {
         let body_str = std::str::from_utf8(&parsed.body_element).unwrap();
         // Should have tds namespace re-emitted since it was on Envelope
         assert!(
-            body_str.contains("xmlns:tds") && body_str.contains("http://www.onvif.org/ver10/device/wsdl"),
+            body_str.contains("xmlns:tds")
+                && body_str.contains("http://www.onvif.org/ver10/device/wsdl"),
             "body_element should contain tds namespace declaration, got: {body_str}"
         );
     }
@@ -552,7 +587,10 @@ mod tests {
         let body = Bytes::from_static(b"<op:Foo/>");
         let envelope = serialize_envelope(body, SoapVersion::Soap12);
         let s = std::str::from_utf8(&envelope).unwrap();
-        assert!(s.contains(r#"xmlns:env="http://www.w3.org/2003/05/soap-envelope""#), "got: {s}");
+        assert!(
+            s.contains(r#"xmlns:env="http://www.w3.org/2003/05/soap-envelope""#),
+            "got: {s}"
+        );
         assert!(s.contains("<env:Body>"), "got: {s}");
         assert!(s.contains("<op:Foo/>"), "got: {s}");
         assert!(s.starts_with("<env:Envelope"), "got: {s}");
@@ -573,7 +611,11 @@ mod tests {
         let result = parse_envelope(xml.as_bytes());
         assert!(result.is_err());
         let fault = result.unwrap_err();
-        assert!(fault.reason.contains("Missing Body"), "got: {}", fault.reason);
+        assert!(
+            fault.reason.contains("Missing Body"),
+            "got: {}",
+            fault.reason
+        );
     }
 
     // SOAP 1.1 tests

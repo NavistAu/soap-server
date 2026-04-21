@@ -1,7 +1,7 @@
 // Raw handler trait — receives XML bytes, returns XML bytes or SoapFault
+use crate::fault::SoapFault;
 use async_trait::async_trait;
 use bytes::Bytes;
-use crate::fault::SoapFault;
 use std::future::Future;
 
 /// A SOAP operation handler that receives the Body first child element as
@@ -45,9 +45,7 @@ mod tests {
 
     #[tokio::test]
     async fn fn_handler_ok_passthrough() {
-        let handler = FnHandler::new(|body: Bytes| async move {
-            Ok::<Bytes, SoapFault>(body)
-        });
+        let handler = FnHandler::new(|body: Bytes| async move { Ok::<Bytes, SoapFault>(body) });
         let input = Bytes::from_static(b"<hello/>");
         let result = handler.handle(input.clone()).await.unwrap();
         assert_eq!(result, input);
@@ -73,7 +71,10 @@ mod tests {
             let resp = resp_clone.clone();
             async move { Ok::<Bytes, SoapFault>(resp) }
         });
-        let result = handler.handle(Bytes::from_static(b"<request/>")).await.unwrap();
+        let result = handler
+            .handle(Bytes::from_static(b"<request/>"))
+            .await
+            .unwrap();
         assert_eq!(result, expected_response);
     }
 

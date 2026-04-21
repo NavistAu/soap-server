@@ -1,7 +1,7 @@
 // XSD type definitions — ComplexType, SimpleType, Restriction, etc.
-use std::collections::HashMap;
 use crate::qname::QName;
-use crate::xsd::elements::{XsdElement, XsdAttribute};
+use crate::xsd::elements::{XsdAttribute, XsdElement};
+use std::collections::HashMap;
 
 /// Top-level XSD type — either complex or simple.
 #[derive(Debug, Clone)]

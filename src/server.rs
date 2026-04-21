@@ -5,18 +5,20 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use axum::{
-    Router,
     extract::{MatchedPath, Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
+    Router,
 };
 use bytes::Bytes;
 use chrono::Utc;
 use tokio::sync::Mutex;
 
 use crate::dispatch::{self, DispatchError, DispatchTable};
-use crate::envelope::{detect_soap_version, parse_envelope, response_content_type, serialize_envelope};
+use crate::envelope::{
+    detect_soap_version, parse_envelope, response_content_type, serialize_envelope,
+};
 use crate::fault::SoapFault;
 use crate::handler::SoapHandler;
 use crate::qname::QName;
@@ -163,7 +165,8 @@ impl ServerBuilder {
             resolve_wsdl(&wsdl_bytes, loader.as_ref(), &mut visited)
                 .map_err(|e| BuildError::WsdlParse(e.to_string()))?
         } else if let Some(ref path) = wsdl_file_path {
-            let base_dir = path.parent()
+            let base_dir = path
+                .parent()
                 .unwrap_or_else(|| std::path::Path::new("."))
                 .to_path_buf();
             let loader = FileWsdlLoader { base_dir };
@@ -236,13 +239,18 @@ impl ServerBuilder {
                     svc_handlers,
                     &self.auth_bypass,
                     self.default_handler.clone(),
-                ).map_err(|e| match e {
-                    DispatchError::UnregisteredOperation(op) => BuildError::UnregisteredOperation(op),
+                )
+                .map_err(|e| match e {
+                    DispatchError::UnregisteredOperation(op) => {
+                        BuildError::UnregisteredOperation(op)
+                    }
                     DispatchError::UnknownOperation(op) => BuildError::UnknownOperation(op),
                 })?;
 
                 // Derive the route path from the first port's address.
-                let path = svc.ports.first()
+                let path = svc
+                    .ports
+                    .first()
                     .map(|p| extract_path_from_url(&p.address))
                     .unwrap_or_else(|| format!("/{}", svc_name.to_lowercase()));
 
@@ -252,17 +260,25 @@ impl ServerBuilder {
             // Build a combined table for the dispatch_table field (used for single-route fallback).
             // Use the first service's table as the primary — in multi-service mode,
             // routing uses service_tables exclusively.
-            let first_table = service_tables.values().next().cloned()
+            let first_table = service_tables
+                .values()
+                .next()
+                .cloned()
                 .unwrap_or_else(|| Arc::new(DispatchTable::empty()));
 
             (first_table, service_tables)
         } else {
             // Single-service mode: build one dispatch table, no per-service tables.
-            let table = dispatch::build_dispatch_table(&resolved, self.handlers, &self.auth_bypass, self.default_handler)
-                .map_err(|e| match e {
-                    DispatchError::UnregisteredOperation(op) => BuildError::UnregisteredOperation(op),
-                    DispatchError::UnknownOperation(op) => BuildError::UnknownOperation(op),
-                })?;
+            let table = dispatch::build_dispatch_table(
+                &resolved,
+                self.handlers,
+                &self.auth_bypass,
+                self.default_handler,
+            )
+            .map_err(|e| match e {
+                DispatchError::UnregisteredOperation(op) => BuildError::UnregisteredOperation(op),
+                DispatchError::UnknownOperation(op) => BuildError::UnknownOperation(op),
+            })?;
             (Arc::new(table), HashMap::new())
         };
 
@@ -413,20 +429,16 @@ impl SoapService {
                     post(soap_post_handler_for_route).with_state(route_state),
                 );
                 // Register GET ?wsdl handler with the shared Arc<SoapService> state.
-                router = router.route(
-                    path,
-                    get(wsdl_get_handler).with_state(state.clone()),
-                );
+                router = router.route(path, get(wsdl_get_handler).with_state(state.clone()));
             }
             router
         } else {
             // Single-service mode: single route (backward-compat).
             let mount_path = self.mount_path.clone();
             let state = Arc::new(self);
-            Router::new().route(
-                &mount_path,
-                post(soap_post_handler).get(wsdl_get_handler),
-            ).with_state(state)
+            Router::new()
+                .route(&mount_path, post(soap_post_handler).get(wsdl_get_handler))
+                .with_state(state)
         }
     }
 }
@@ -445,9 +457,7 @@ fn fault_response(fault: SoapFault, version: crate::wsdl::definitions::SoapVersi
     let ct = response_content_type(&version);
     (
         StatusCode::INTERNAL_SERVER_ERROR,
-        [
-            ("Content-Type", ct),
-        ],
+        [("Content-Type", ct)],
         bytes,
     )
         .into_response()
@@ -456,8 +466,8 @@ fn fault_response(fault: SoapFault, version: crate::wsdl::definitions::SoapVersi
 // ── Helper: extract QName of the first element in body_element bytes ──────────
 
 fn extract_body_qname(body_bytes: &[u8]) -> Result<QName, SoapFault> {
-    use quick_xml::NsReader;
     use quick_xml::events::Event;
+    use quick_xml::NsReader;
 
     let mut reader = NsReader::from_reader(body_bytes);
     reader.config_mut().trim_text(true);
@@ -475,11 +485,9 @@ fn extract_body_qname(body_bytes: &[u8]) -> Result<QName, SoapFault> {
                     .map_err(|e| SoapFault::sender(format!("Invalid UTF-8 in element name: {e}")))?
                     .to_string();
                 let ns = match resolved_ns {
-                    quick_xml::name::ResolveResult::Bound(ns) => {
-                        std::str::from_utf8(ns.0)
-                            .map_err(|e| SoapFault::sender(format!("Invalid UTF-8 in namespace: {e}")))?
-                            .to_string()
-                    }
+                    quick_xml::name::ResolveResult::Bound(ns) => std::str::from_utf8(ns.0)
+                        .map_err(|e| SoapFault::sender(format!("Invalid UTF-8 in namespace: {e}")))?
+                        .to_string(),
                     _ => String::new(),
                 };
                 if ns.is_empty() {
@@ -767,8 +775,8 @@ async fn wsdl_get_handler(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::handler::FnHandler;
     use crate::fault::SoapFault;
+    use crate::handler::FnHandler;
     use bytes::Bytes;
 
     const MINIMAL_WSDL: &[u8] = br#"<?xml version="1.0" encoding="utf-8"?>
@@ -848,8 +856,7 @@ mod tests {
     #[test]
     fn server_builder_fails_with_unregistered_operation() {
         // WSDL has Ping but no handler is provided.
-        let result = ServerBuilder::from_wsdl_bytes(MINIMAL_WSDL)
-            .build();
+        let result = ServerBuilder::from_wsdl_bytes(MINIMAL_WSDL).build();
         assert!(result.is_err());
         match result.unwrap_err() {
             BuildError::UnregisteredOperation(op) => assert_eq!(op, "Ping"),

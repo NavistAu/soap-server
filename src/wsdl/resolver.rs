@@ -1,13 +1,13 @@
 // WSDL Pass 2 resolver — wire cross-references, load imports, delegate schemas to XSD layer
 // Also provides rewrite_wsdl_address() for GET ?wsdl serving.
 
-use std::collections::{HashMap, HashSet};
-use crate::wsdl::parser::{parse_wsdl, WsdlError};
+use crate::qname::QName;
 use crate::wsdl::definitions::WsdlDefinition;
+use crate::wsdl::parser::{parse_wsdl, WsdlError};
 use crate::xsd::parser::{parse_schema, SchemaError};
 use crate::xsd::resolver::{resolve_schema, SchemaLoader};
 use crate::xsd::types::{TypeRegistry, XsdType};
-use crate::qname::QName;
+use std::collections::{HashMap, HashSet};
 
 /// Output of WSDL resolution: the wired definition + all type information.
 #[derive(Debug)]
@@ -38,7 +38,13 @@ pub fn resolve_wsdl(
 ) -> Result<ResolvedWsdl, WsdlError> {
     let mut already_loaded_schemas: HashMap<String, ()> = HashMap::new();
     let mut accumulated_types: HashMap<QName, XsdType> = HashMap::new();
-    resolve_wsdl_inner(bytes, loader, visited, &mut already_loaded_schemas, &mut accumulated_types)
+    resolve_wsdl_inner(
+        bytes,
+        loader,
+        visited,
+        &mut already_loaded_schemas,
+        &mut accumulated_types,
+    )
 }
 
 fn resolve_wsdl_inner(
@@ -71,7 +77,11 @@ fn resolve_wsdl_inner(
 
         let imported_bytes = loader.load(&location)?;
         let imported = resolve_wsdl_inner(
-            &imported_bytes, loader, visited, already_loaded_schemas, accumulated_types
+            &imported_bytes,
+            loader,
+            visited,
+            already_loaded_schemas,
+            accumulated_types,
         )?;
 
         // Merge imported definition into root: messages, port_types, bindings, services
@@ -91,7 +101,9 @@ fn resolve_wsdl_inner(
     }
 
     // Collect and resolve inline xs:schema nodes from wsdl:types
-    let schema_loader = WsdlSchemaLoaderAdapter { wsdl_loader: loader };
+    let schema_loader = WsdlSchemaLoaderAdapter {
+        wsdl_loader: loader,
+    };
 
     for schema_str in &root_def.types.schemas {
         let doc = roxmltree::Document::parse(schema_str)
@@ -127,10 +139,10 @@ struct WsdlSchemaLoaderAdapter<'a> {
 
 impl<'a> SchemaLoader for WsdlSchemaLoaderAdapter<'a> {
     fn load(&self, _namespace: Option<&str>, location: &str) -> Result<String, SchemaError> {
-        let bytes = self.wsdl_loader.load(location)
-            .map_err(|e| SchemaError::UnknownRef(format!("WsdlLoader error for {location}: {e}")))?;
-        String::from_utf8(bytes)
-            .map_err(|e| SchemaError::MalformedXml(format!("UTF-8 error: {e}")))
+        let bytes = self.wsdl_loader.load(location).map_err(|e| {
+            SchemaError::UnknownRef(format!("WsdlLoader error for {location}: {e}"))
+        })?;
+        String::from_utf8(bytes).map_err(|e| SchemaError::MalformedXml(format!("UTF-8 error: {e}")))
     }
 }
 
@@ -157,7 +169,8 @@ pub fn rewrite_wsdl_address(bytes: &[u8], new_url: &str) -> Vec<u8> {
                 if local_str == "address" {
                     // Rewrite the location= attribute if this is a soap:address element
                     let name_bytes = e.name().as_ref().to_vec();
-                    let name_str = String::from_utf8(name_bytes).unwrap_or_else(|_| "address".to_string());
+                    let name_str =
+                        String::from_utf8(name_bytes).unwrap_or_else(|_| "address".to_string());
                     let mut new_start = BytesStart::new(name_str.as_str());
                     for attr in e.attributes().flatten() {
                         let attr_key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
@@ -178,7 +191,8 @@ pub fn rewrite_wsdl_address(bytes: &[u8], new_url: &str) -> Vec<u8> {
 
                 if local_str == "address" {
                     let name_bytes = e.name().as_ref().to_vec();
-                    let name_str = String::from_utf8(name_bytes).unwrap_or_else(|_| "address".to_string());
+                    let name_str =
+                        String::from_utf8(name_bytes).unwrap_or_else(|_| "address".to_string());
                     let mut new_empty = BytesStart::new(name_str.as_str());
                     for attr in e.attributes().flatten() {
                         let attr_key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
@@ -372,7 +386,9 @@ mod tests {
     struct NullWsdlLoader;
     impl WsdlLoader for NullWsdlLoader {
         fn load(&self, location: &str) -> Result<Vec<u8>, WsdlError> {
-            Err(WsdlError::MalformedXml(format!("NullWsdlLoader cannot load: {location}")))
+            Err(WsdlError::MalformedXml(format!(
+                "NullWsdlLoader cannot load: {location}"
+            )))
         }
     }
 
@@ -381,7 +397,9 @@ mod tests {
         fn load(&self, location: &str) -> Result<Vec<u8>, WsdlError> {
             match location {
                 "imported.wsdl" => Ok(IMPORTED_WSDL.as_bytes().to_vec()),
-                _ => Err(WsdlError::MalformedXml(format!("Unknown location: {location}"))),
+                _ => Err(WsdlError::MalformedXml(format!(
+                    "Unknown location: {location}"
+                ))),
             }
         }
     }
@@ -391,7 +409,8 @@ mod tests {
     }
     impl WsdlLoader for DiamondLoader {
         fn load(&self, location: &str) -> Result<Vec<u8>, WsdlError> {
-            self.load_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            self.load_count
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             match location {
                 "b.wsdl" => Ok(DIAMOND_B_WSDL.as_bytes().to_vec()),
                 "c.wsdl" => Ok(DIAMOND_C_WSDL.as_bytes().to_vec()),
@@ -429,14 +448,20 @@ mod tests {
         let resolved = result.unwrap();
 
         // Root operations present
-        assert!(resolved.definition.messages.contains_key("RootMsg"),
-            "RootMsg should be in merged definition");
+        assert!(
+            resolved.definition.messages.contains_key("RootMsg"),
+            "RootMsg should be in merged definition"
+        );
 
         // Imported operations merged in
-        assert!(resolved.definition.messages.contains_key("ImportedMsg"),
-            "ImportedMsg from imported WSDL should be merged");
-        assert!(resolved.definition.port_types.contains_key("ImportedPT"),
-            "ImportedPT from imported WSDL should be merged");
+        assert!(
+            resolved.definition.messages.contains_key("ImportedMsg"),
+            "ImportedMsg from imported WSDL should be merged"
+        );
+        assert!(
+            resolved.definition.port_types.contains_key("ImportedPT"),
+            "ImportedPT from imported WSDL should be merged"
+        );
     }
 
     #[test]
@@ -458,7 +483,9 @@ mod tests {
     #[test]
     fn diamond_import_loads_d_once() {
         let load_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let loader = DiamondLoader { load_count: load_count.clone() };
+        let loader = DiamondLoader {
+            load_count: load_count.clone(),
+        };
 
         let mut visited = HashSet::new();
         let result = resolve_wsdl(DIAMOND_A_WSDL.as_bytes(), &loader, &mut visited);
@@ -472,16 +499,23 @@ mod tests {
     #[test]
     fn diamond_import_types_deduplicated_in_registry() {
         let load_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let loader = DiamondLoader { load_count: load_count.clone() };
+        let loader = DiamondLoader {
+            load_count: load_count.clone(),
+        };
 
         let mut visited = HashSet::new();
-        let resolved = resolve_wsdl(DIAMOND_A_WSDL.as_bytes(), &loader, &mut visited)
-            .expect("resolve ok");
+        let resolved =
+            resolve_wsdl(DIAMOND_A_WSDL.as_bytes(), &loader, &mut visited).expect("resolve ok");
 
         use crate::qname::QName;
         // DType should appear exactly once (from d.wsdl loaded once)
-        assert!(resolved.type_registry.lookup(&QName::new("http://example.com/d", "DType")).is_some(),
-            "DType from d.wsdl should appear in TypeRegistry");
+        assert!(
+            resolved
+                .type_registry
+                .lookup(&QName::new("http://example.com/d", "DType"))
+                .is_some(),
+            "DType from d.wsdl should appear in TypeRegistry"
+        );
     }
 
     #[test]
@@ -500,7 +534,10 @@ mod tests {
         // With visited containing "a.wsdl", when B tries to import "a.wsdl" it's skipped
         // So this should succeed (no cycle error needed for this pattern)
         // The cycle guard is: b.wsdl is loaded, then it tries to load a.wsdl but a.wsdl is already in visited
-        assert!(result.is_ok(), "Cycle guard should prevent infinite recursion: {result:?}");
+        assert!(
+            result.is_ok(),
+            "Cycle guard should prevent infinite recursion: {result:?}"
+        );
     }
 
     #[test]
@@ -520,7 +557,10 @@ mod tests {
 
     #[test]
     fn rewrite_wsdl_address_replaces_location_soap11() {
-        let result = rewrite_wsdl_address(WSDL_WITH_SOAP11_ADDRESS.as_bytes(), "http://new-server/soap");
+        let result = rewrite_wsdl_address(
+            WSDL_WITH_SOAP11_ADDRESS.as_bytes(),
+            "http://new-server/soap",
+        );
         let output = String::from_utf8(result).expect("valid utf8");
 
         assert!(
@@ -539,11 +579,17 @@ mod tests {
         let output = String::from_utf8(result).expect("valid utf8");
 
         // Service name should still be present
-        assert!(output.contains("RootService"), "Service name should be preserved");
+        assert!(
+            output.contains("RootService"),
+            "Service name should be preserved"
+        );
         // Port name should still be present
         assert!(output.contains("RootPort"), "Port name should be preserved");
         // binding reference should still be there
-        assert!(output.contains("RootBinding"), "Binding reference should be preserved");
+        assert!(
+            output.contains("RootBinding"),
+            "Binding reference should be preserved"
+        );
     }
 
     #[test]
@@ -552,14 +598,21 @@ mod tests {
         let resolved = resolve_wsdl(STANDALONE_WSDL.as_bytes(), &NullWsdlLoader, &mut visited)
             .expect("resolve ok");
 
-        assert_eq!(resolved.raw_bytes, STANDALONE_WSDL.as_bytes(),
-            "raw_bytes should match original input bytes");
+        assert_eq!(
+            resolved.raw_bytes,
+            STANDALONE_WSDL.as_bytes(),
+            "raw_bytes should match original input bytes"
+        );
     }
 
     #[test]
     fn resolve_wsdl_no_imports_succeeds() {
         let mut visited = HashSet::new();
         let result = resolve_wsdl(STANDALONE_WSDL.as_bytes(), &NullWsdlLoader, &mut visited);
-        assert!(result.is_ok(), "Standalone WSDL with no imports should succeed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Standalone WSDL with no imports should succeed: {:?}",
+            result.err()
+        );
     }
 }

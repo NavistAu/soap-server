@@ -48,11 +48,7 @@ impl SoapFault {
     }
 
     pub fn version_mismatch() -> Self {
-        Self::new(
-            FaultCode::VersionMismatch,
-            "SOAP version mismatch",
-            None,
-        )
+        Self::new(FaultCode::VersionMismatch, "SOAP version mismatch", None)
     }
 
     pub fn must_understand(header: &str) -> Self {
@@ -74,7 +70,10 @@ impl SoapFault {
     /// Serialize to a complete SOAP envelope. Version determines fault structure and code names.
     /// SOAP 1.2 uses nested Code/Reason (existing to_xml_bytes). SOAP 1.1 uses flat
     /// faultcode/faultstring per W3C SOAP 1.1 spec Section 4.4.
-    pub fn to_xml_bytes_versioned(&self, version: &crate::wsdl::definitions::SoapVersion) -> Vec<u8> {
+    pub fn to_xml_bytes_versioned(
+        &self,
+        version: &crate::wsdl::definitions::SoapVersion,
+    ) -> Vec<u8> {
         match version {
             crate::wsdl::definitions::SoapVersion::Soap12 => self.to_xml_bytes(),
             crate::wsdl::definitions::SoapVersion::Soap11 => self.to_xml_bytes_v11(),
@@ -255,11 +254,26 @@ mod tests {
     fn fault_soap11_structure() {
         let fault = SoapFault::sender("bad");
         let xml = String::from_utf8(fault.to_xml_bytes_v11()).unwrap();
-        assert!(xml.contains("<faultcode>"), "Expected <faultcode>, got: {xml}");
-        assert!(xml.contains("<faultstring>"), "Expected <faultstring>, got: {xml}");
-        assert!(xml.contains("SOAP-ENV:Fault"), "Expected SOAP-ENV:Fault, got: {xml}");
-        assert!(!xml.contains("<env:Code>"), "Should NOT contain <env:Code>, got: {xml}");
-        assert!(!xml.contains("<env:Reason>"), "Should NOT contain <env:Reason>, got: {xml}");
+        assert!(
+            xml.contains("<faultcode>"),
+            "Expected <faultcode>, got: {xml}"
+        );
+        assert!(
+            xml.contains("<faultstring>"),
+            "Expected <faultstring>, got: {xml}"
+        );
+        assert!(
+            xml.contains("SOAP-ENV:Fault"),
+            "Expected SOAP-ENV:Fault, got: {xml}"
+        );
+        assert!(
+            !xml.contains("<env:Code>"),
+            "Should NOT contain <env:Code>, got: {xml}"
+        );
+        assert!(
+            !xml.contains("<env:Reason>"),
+            "Should NOT contain <env:Reason>, got: {xml}"
+        );
     }
 
     #[test]
@@ -276,8 +290,14 @@ mod tests {
     fn fault_soap11_wraps_in_envelope() {
         let fault = SoapFault::sender("bad");
         let xml = String::from_utf8(fault.to_xml_bytes_v11()).unwrap();
-        assert!(xml.starts_with("<SOAP-ENV:Envelope"), "Expected SOAP-ENV:Envelope root, got: {xml}");
-        assert!(xml.contains("<SOAP-ENV:Body>"), "Expected <SOAP-ENV:Body>, got: {xml}");
+        assert!(
+            xml.starts_with("<SOAP-ENV:Envelope"),
+            "Expected SOAP-ENV:Envelope root, got: {xml}"
+        );
+        assert!(
+            xml.contains("<SOAP-ENV:Body>"),
+            "Expected <SOAP-ENV:Body>, got: {xml}"
+        );
     }
 
     #[test]
@@ -360,7 +380,10 @@ mod tests {
         let fault = SoapFault::sender("test");
         let v12 = fault.to_xml_bytes_versioned(&SoapVersion::Soap12);
         let existing = fault.to_xml_bytes();
-        assert_eq!(v12, existing, "Soap12 path should produce identical output to to_xml_bytes()");
+        assert_eq!(
+            v12, existing,
+            "Soap12 path should produce identical output to to_xml_bytes()"
+        );
     }
 
     #[test]
@@ -369,6 +392,9 @@ mod tests {
         let fault = SoapFault::sender("test");
         let v11_versioned = fault.to_xml_bytes_versioned(&SoapVersion::Soap11);
         let v11_direct = fault.to_xml_bytes_v11();
-        assert_eq!(v11_versioned, v11_direct, "Soap11 path should produce identical output to to_xml_bytes_v11()");
+        assert_eq!(
+            v11_versioned, v11_direct,
+            "Soap11 path should produce identical output to to_xml_bytes_v11()"
+        );
     }
 }

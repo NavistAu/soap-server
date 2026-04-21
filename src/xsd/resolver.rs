@@ -1,9 +1,9 @@
 // XSD Pass 2 resolver — resolve forward references, flatten extension chains, load imports
-use std::collections::{HashMap, HashSet};
 use crate::qname::QName;
-use crate::xsd::types::{XsdType, ComplexType, ComplexContent, TypeRegistry};
-use crate::xsd::elements::{XsdElement, XsdAttribute};
+use crate::xsd::elements::{XsdAttribute, XsdElement};
 use crate::xsd::parser::{RawSchema, SchemaError};
+use crate::xsd::types::{ComplexContent, ComplexType, TypeRegistry, XsdType};
+use std::collections::{HashMap, HashSet};
 
 /// Abstracts file/network I/O for loading imported schemas during resolution.
 /// Tests implement MockSchemaLoader; production uses FileSchemaLoader from wsdl::resolver.
@@ -16,7 +16,9 @@ pub struct NullSchemaLoader;
 
 impl SchemaLoader for NullSchemaLoader {
     fn load(&self, _namespace: Option<&str>, location: &str) -> Result<String, SchemaError> {
-        Err(SchemaError::UnknownRef(format!("NullSchemaLoader cannot load: {location}")))
+        Err(SchemaError::UnknownRef(format!(
+            "NullSchemaLoader cannot load: {location}"
+        )))
     }
 }
 
@@ -52,7 +54,9 @@ pub fn resolve_schema(
     }
 
     // Resolve each complex type.
-    let complex_qnames: Vec<QName> = flat.types.keys()
+    let complex_qnames: Vec<QName> = flat
+        .types
+        .keys()
         .filter(|k| matches!(flat.types[*k], XsdType::Complex(_)))
         .cloned()
         .collect();
@@ -206,7 +210,10 @@ fn resolve_content(
     resolving: &mut HashSet<QName>,
 ) -> Result<ComplexContent, SchemaError> {
     match content {
-        ComplexContent::ComplexExtension { base, content: child_content } => {
+        ComplexContent::ComplexExtension {
+            base,
+            content: child_content,
+        } => {
             // Resolve base type first (bottom-up: deepest ancestor first).
             let base_ct = resolve_named_type(base, flat, resolved, resolving)?;
 
@@ -224,7 +231,10 @@ fn resolve_content(
             Ok(ComplexContent::Sequence(all_elements))
         }
 
-        ComplexContent::ComplexRestriction { base: _, content: restriction_content } => {
+        ComplexContent::ComplexRestriction {
+            base: _,
+            content: restriction_content,
+        } => {
             // Restriction: use only the restriction's own content model (not the base's).
             resolve_content(restriction_content, flat, resolved, resolving)
         }
@@ -319,10 +329,7 @@ fn resolve_element_list(
 }
 
 /// Resolve attributes list, expanding xs:attributeGroup refs.
-fn resolve_attributes(
-    attrs: &[XsdAttribute],
-    flat: &FlatTypeMap,
-) -> Vec<XsdAttribute> {
+fn resolve_attributes(attrs: &[XsdAttribute], flat: &FlatTypeMap) -> Vec<XsdAttribute> {
     let mut result = Vec::new();
     for attr in attrs {
         if let Some(ref ag_ref) = attr.ref_attr {
@@ -355,9 +362,9 @@ fn expand_attribute_group(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use roxmltree::Document;
     use crate::xsd::parser::parse_schema;
     use crate::xsd::types::{ComplexContent, XsdType};
+    use roxmltree::Document;
 
     /// Fixture: 3-level inheritance schema (BaseType → MiddleType → LeafType).
     const THREE_LEVEL_SCHEMA: &str = r#"<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
@@ -397,16 +404,12 @@ mod tests {
     fn get_elements(registry: &TypeRegistry, ns: &str, name: &str) -> Vec<String> {
         let qname = QName::new(ns, name);
         match registry.lookup(&qname) {
-            Some(XsdType::Complex(ct)) => {
-                match &ct.content {
-                    ComplexContent::Sequence(els) => {
-                        els.iter()
-                           .filter_map(|e| e.name.clone())
-                           .collect()
-                    }
-                    _ => vec![],
+            Some(XsdType::Complex(ct)) => match &ct.content {
+                ComplexContent::Sequence(els) => {
+                    els.iter().filter_map(|e| e.name.clone()).collect()
                 }
-            }
+                _ => vec![],
+            },
             _ => vec![],
         }
     }
@@ -481,7 +484,11 @@ mod tests {
 </xs:schema>"#;
         let registry = parse_and_resolve(xml).expect("resolve ok");
         let elements = get_elements(&registry, "urn:test", "RestrictedType");
-        assert_eq!(elements, vec!["id"], "Restriction should only have 'id', not 'extra'");
+        assert_eq!(
+            elements,
+            vec!["id"],
+            "Restriction should only have 'id', not 'extra'"
+        );
     }
 
     /// DIAMOND IMPORT: A imports B and C; B and C both import D. D loaded once.
@@ -492,22 +499,26 @@ mod tests {
         }
         impl SchemaLoader for DiamondLoader {
             fn load(&self, _ns: Option<&str>, location: &str) -> Result<String, SchemaError> {
-                self.load_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                self.load_count
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 match location {
                     "B.xsd" => Ok(r#"<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
                         targetNamespace="urn:b" xmlns:tns="urn:b">
                       <xs:import namespace="urn:d" schemaLocation="D.xsd"/>
                       <xs:complexType name="BType"><xs:sequence/></xs:complexType>
-                    </xs:schema>"#.to_string()),
+                    </xs:schema>"#
+                        .to_string()),
                     "C.xsd" => Ok(r#"<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
                         targetNamespace="urn:c" xmlns:tns="urn:c">
                       <xs:import namespace="urn:d" schemaLocation="D.xsd"/>
                       <xs:complexType name="CType"><xs:sequence/></xs:complexType>
-                    </xs:schema>"#.to_string()),
+                    </xs:schema>"#
+                        .to_string()),
                     "D.xsd" => Ok(r#"<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
                         targetNamespace="urn:d">
                       <xs:complexType name="DType"><xs:sequence/></xs:complexType>
-                    </xs:schema>"#.to_string()),
+                    </xs:schema>"#
+                        .to_string()),
                     _ => Err(SchemaError::UnknownRef(location.to_string())),
                 }
             }
@@ -519,7 +530,9 @@ mod tests {
           <xs:import namespace="urn:c" schemaLocation="C.xsd"/>
         </xs:schema>"#;
 
-        let loader = DiamondLoader { load_count: std::sync::atomic::AtomicUsize::new(0) };
+        let loader = DiamondLoader {
+            load_count: std::sync::atomic::AtomicUsize::new(0),
+        };
         let doc = Document::parse(root_xml).expect("valid XML");
         let raw = parse_schema(doc.root_element()).expect("valid schema");
         let mut already_loaded = HashMap::new();
@@ -527,7 +540,10 @@ mod tests {
 
         // D.xsd should have been loaded exactly once.
         let count = loader.load_count.load(std::sync::atomic::Ordering::SeqCst);
-        assert_eq!(count, 3, "Should load B.xsd, C.xsd, D.xsd — D only once. Got: {count}");
+        assert_eq!(
+            count, 3,
+            "Should load B.xsd, C.xsd, D.xsd — D only once. Got: {count}"
+        );
 
         // All types from B, C, D should be in registry.
         assert!(registry.lookup(&QName::new("urn:b", "BType")).is_some());

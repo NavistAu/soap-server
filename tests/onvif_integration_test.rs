@@ -7,12 +7,10 @@
 //   4. GET ?wsdl returns rewritten WSDL XML
 //   5. axum Router composes cleanly (Router::merge)
 
-use std::sync::{Arc, Mutex};
 use axum_test::TestServer;
 use bytes::Bytes;
-use soap_server::{
-    compute_digest, FnHandler, SoapFault, ServerBuilder, WsdlError, WsdlLoader,
-};
+use soap_server::{compute_digest, FnHandler, ServerBuilder, SoapFault, WsdlError, WsdlLoader};
+use std::sync::{Arc, Mutex};
 
 // ── FixtureLoader ─────────────────────────────────────────────────────────────
 //
@@ -29,10 +27,7 @@ struct FixtureLoader;
 impl WsdlLoader for FixtureLoader {
     fn load(&self, location: &str) -> Result<Vec<u8>, WsdlError> {
         // Extract the basename from the location path.
-        let basename = location
-            .split('/')
-            .next_back()
-            .unwrap_or(location);
+        let basename = location.split('/').next_back().unwrap_or(location);
 
         // Map known fixture filenames to their on-disk paths.
         let fixture_path = match basename {
@@ -42,13 +37,11 @@ impl WsdlLoader for FixtureLoader {
             other => {
                 // Unknown external location (e.g., HTTPS schema URLs) — return empty schema.
                 // These are optional type extensions; their absence does not affect dispatch.
-                return Ok(
-                    format!(
-                        r#"<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+                return Ok(format!(
+                    r#"<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
                             targetNamespace="urn:fixture-stub:{other}"/>"#
-                    )
-                    .into_bytes(),
-                );
+                )
+                .into_bytes());
             }
         };
 
@@ -82,7 +75,11 @@ fn format_wsu_created(unix_secs: u64) -> String {
 fn days_to_ymd(days: u64) -> (u64, u64, u64) {
     // Algorithm: convert days since Unix epoch (1970-01-01) to (year, month, day)
     let remaining = days as i64 + 719468; // shift to civil epoch (0001-03-01 = day 0)
-    let era = if remaining >= 0 { remaining } else { remaining - 146096 } / 146097;
+    let era = if remaining >= 0 {
+        remaining
+    } else {
+        remaining - 146096
+    } / 146097;
     let doe = remaining - era * 146097;
     let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
     let y = yoe + era * 400;
@@ -188,11 +185,7 @@ async fn test_soap12_dispatch() {
     let router = service.into_router();
     let server = TestServer::new(router);
 
-    let body = soap12_envelope(
-        ONVIF_TDS_NS,
-        "tds",
-        "<tds:GetSystemDateAndTime/>",
-    );
+    let body = soap12_envelope(ONVIF_TDS_NS, "tds", "<tds:GetSystemDateAndTime/>");
     let resp = server
         .post("/soap")
         .bytes(axum::body::Bytes::from(body.into_bytes()))
@@ -201,7 +194,9 @@ async fn test_soap12_dispatch() {
 
     resp.assert_status_ok();
 
-    let content_type = resp.headers().get("content-type")
+    let content_type = resp
+        .headers()
+        .get("content-type")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
     assert!(
@@ -269,8 +264,8 @@ async fn test_wssec_valid_credentials_accepted() {
         .unwrap()
         .as_secs();
     let created = format_wsu_created(now - 1);
-    let digest = compute_digest(nonce_b64, &created, "password123")
-        .expect("compute_digest should not fail");
+    let digest =
+        compute_digest(nonce_b64, &created, "password123").expect("compute_digest should not fail");
 
     let body_content = "<tds:GetDeviceInformation/>";
     let body = soap12_envelope_with_security(
@@ -447,7 +442,9 @@ async fn test_wsdl_serving() {
     let resp = server.get("/soap?wsdl").await;
     resp.assert_status_ok();
 
-    let content_type = resp.headers().get("content-type")
+    let content_type = resp
+        .headers()
+        .get("content-type")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
     assert!(

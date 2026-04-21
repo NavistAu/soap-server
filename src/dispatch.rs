@@ -1,14 +1,14 @@
 // SOAP dispatch — route body element QName to registered SoapHandler
 // Also provides XSD-11 payload validation (validate_request).
 
+use crate::fault::SoapFault;
+use crate::handler::SoapHandler;
+use crate::qname::QName;
+use crate::wsdl::definitions::BindingStyle;
+use crate::wsdl::resolver::ResolvedWsdl;
+use crate::xsd::types::{ComplexContent, TypeRegistry};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use crate::handler::SoapHandler;
-use crate::fault::SoapFault;
-use crate::qname::QName;
-use crate::xsd::types::{TypeRegistry, ComplexContent};
-use crate::wsdl::resolver::ResolvedWsdl;
-use crate::wsdl::definitions::BindingStyle;
 
 /// A single routing entry — holds the handler plus metadata needed by the pipeline.
 pub struct DispatchEntry {
@@ -115,7 +115,11 @@ fn collect_ops_for_service(
                 let style = binding.soap_binding.style.clone();
                 for binding_op in &binding.operations {
                     let rpc_ns = if style == BindingStyle::Rpc {
-                        binding_op.input.body.namespace.clone()
+                        binding_op
+                            .input
+                            .body
+                            .namespace
+                            .clone()
                             .or_else(|| Some(resolved.definition.target_namespace.clone()))
                     } else {
                         None
@@ -137,7 +141,11 @@ fn collect_ops_for_service(
             let style = binding.soap_binding.style.clone();
             for binding_op in &binding.operations {
                 let rpc_ns = if style == BindingStyle::Rpc {
-                    binding_op.input.body.namespace.clone()
+                    binding_op
+                        .input
+                        .body
+                        .namespace
+                        .clone()
                         .or_else(|| Some(resolved.definition.target_namespace.clone()))
                 } else {
                     None
@@ -195,7 +203,9 @@ fn build_dispatch_table_from_ops(
         // RPC style: synthesize QName from (soap:body namespace or targetNamespace, operation name).
         // Document style: resolve from message part element reference.
         let input_type = if style == BindingStyle::Rpc {
-            let ns = rpc_ns.as_deref().unwrap_or(&resolved.definition.target_namespace);
+            let ns = rpc_ns
+                .as_deref()
+                .unwrap_or(&resolved.definition.target_namespace);
             Some(QName::new(ns, &op_name))
         } else {
             resolve_input_element(resolved, &op_name)
@@ -233,7 +243,11 @@ fn build_dispatch_table_from_ops(
         }
     }
 
-    Ok(DispatchTable { by_element, by_action, default_handler })
+    Ok(DispatchTable {
+        by_element,
+        by_action,
+        default_handler,
+    })
 }
 
 /// Resolve the input element QName for a named operation.
@@ -280,7 +294,9 @@ pub fn route<'a>(
         }
     }
 
-    Err(SoapFault::action_not_supported(&body_first_child_qname.to_string()))
+    Err(SoapFault::action_not_supported(
+        &body_first_child_qname.to_string(),
+    ))
     // Note: default_handler is not reachable via route() — it is used at build_dispatch_table()
     // time to fill entries for unregistered operations, so by dispatch time all entries exist.
 }
@@ -341,13 +357,20 @@ fn collect_required_element_names(xsd_type: &crate::xsd::types::XsdType) -> Vec<
 
 fn collect_required_from_content(content: &ComplexContent) -> Vec<String> {
     let elements = match content {
-        ComplexContent::Sequence(els) | ComplexContent::All(els) | ComplexContent::Choice(els) => els,
-        ComplexContent::ComplexExtension { content, .. } => return collect_required_from_content(content),
-        ComplexContent::ComplexRestriction { content, .. } => return collect_required_from_content(content),
+        ComplexContent::Sequence(els) | ComplexContent::All(els) | ComplexContent::Choice(els) => {
+            els
+        }
+        ComplexContent::ComplexExtension { content, .. } => {
+            return collect_required_from_content(content)
+        }
+        ComplexContent::ComplexRestriction { content, .. } => {
+            return collect_required_from_content(content)
+        }
         ComplexContent::Empty | ComplexContent::SimpleContent(_) => return vec![],
     };
 
-    elements.iter()
+    elements
+        .iter()
         .filter_map(|el| {
             if el.min_occurs > 0 {
                 el.name.clone()
@@ -361,8 +384,8 @@ fn collect_required_from_content(content: &ComplexContent) -> Vec<String> {
 /// Use quick-xml to parse body_bytes and return the local names of direct children
 /// of the root element (one level deep).
 fn parse_child_element_names(body_bytes: &[u8]) -> Result<HashSet<String>, String> {
-    use quick_xml::Reader;
     use quick_xml::events::Event;
+    use quick_xml::Reader;
 
     let mut reader = Reader::from_reader(body_bytes);
     reader.config_mut().trim_text(true);
@@ -411,16 +434,16 @@ fn parse_child_element_names(body_bytes: &[u8]) -> Result<HashSet<String>, Strin
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
-    use bytes::Bytes;
     use crate::fault::{FaultCode, SoapFault};
     use crate::handler::SoapHandler;
     use crate::qname::QName;
-    use crate::wsdl::resolver::ResolvedWsdl;
     use crate::wsdl::definitions::*;
-    use crate::xsd::types::{TypeRegistry, XsdType, ComplexType, ComplexContent};
+    use crate::wsdl::resolver::ResolvedWsdl;
     use crate::xsd::elements::XsdElement;
+    use crate::xsd::types::{ComplexContent, ComplexType, TypeRegistry, XsdType};
     use async_trait::async_trait;
+    use bytes::Bytes;
+    use std::sync::Arc;
 
     // ── Test handler ──────────────────────────────────────────────────────────
 
@@ -551,7 +574,8 @@ mod tests {
     #[test]
     fn dispatch_table_routes_by_element_qname() {
         let elem_qname = QName::new("http://example.com", "GetProfiles");
-        let resolved = make_resolved_wsdl("GetProfiles", "urn:GetProfiles", Some(elem_qname.clone()));
+        let resolved =
+            make_resolved_wsdl("GetProfiles", "urn:GetProfiles", Some(elem_qname.clone()));
 
         let mut handlers = HashMap::new();
         handlers.insert("GetProfiles".to_string(), mock_handler("GetProfiles"));
@@ -572,7 +596,9 @@ mod tests {
         let handlers: HashMap<String, Arc<dyn SoapHandler>> = HashMap::new();
         let result = build_dispatch_table(&resolved, handlers, &HashSet::new(), None);
 
-        assert!(matches!(result, Err(DispatchError::UnregisteredOperation(ref name)) if name == "GetProfiles"));
+        assert!(
+            matches!(result, Err(DispatchError::UnregisteredOperation(ref name)) if name == "GetProfiles")
+        );
     }
 
     #[test]
@@ -585,13 +611,16 @@ mod tests {
         handlers.insert("NonExistentOp".to_string(), mock_handler("ghost")); // no WSDL op
 
         let result = build_dispatch_table(&resolved, handlers, &HashSet::new(), None);
-        assert!(matches!(result, Err(DispatchError::UnknownOperation(ref name)) if name == "NonExistentOp"));
+        assert!(
+            matches!(result, Err(DispatchError::UnknownOperation(ref name)) if name == "NonExistentOp")
+        );
     }
 
     #[test]
     fn route_unknown_qname_no_soap_action_returns_sender_fault() {
         let elem_qname = QName::new("http://example.com", "GetProfiles");
-        let resolved = make_resolved_wsdl("GetProfiles", "urn:GetProfiles", Some(elem_qname.clone()));
+        let resolved =
+            make_resolved_wsdl("GetProfiles", "urn:GetProfiles", Some(elem_qname.clone()));
 
         let mut handlers = HashMap::new();
         handlers.insert("GetProfiles".to_string(), mock_handler("GetProfiles"));
@@ -603,13 +632,17 @@ mod tests {
         assert!(result.is_err());
         let fault = result.unwrap_err();
         assert_eq!(fault.code, FaultCode::Sender);
-        assert!(fault.reason.to_lowercase().contains("action") || fault.reason.to_lowercase().contains("supported"));
+        assert!(
+            fault.reason.to_lowercase().contains("action")
+                || fault.reason.to_lowercase().contains("supported")
+        );
     }
 
     #[test]
     fn route_falls_back_to_soap_action_on_unknown_qname() {
         let elem_qname = QName::new("http://example.com", "GetProfiles");
-        let resolved = make_resolved_wsdl("GetProfiles", "urn:GetProfiles", Some(elem_qname.clone()));
+        let resolved =
+            make_resolved_wsdl("GetProfiles", "urn:GetProfiles", Some(elem_qname.clone()));
 
         let mut handlers = HashMap::new();
         handlers.insert("GetProfiles".to_string(), mock_handler("GetProfiles"));
@@ -624,7 +657,8 @@ mod tests {
     #[test]
     fn route_unknown_qname_unknown_soap_action_returns_fault() {
         let elem_qname = QName::new("http://example.com", "GetProfiles");
-        let resolved = make_resolved_wsdl("GetProfiles", "urn:GetProfiles", Some(elem_qname.clone()));
+        let resolved =
+            make_resolved_wsdl("GetProfiles", "urn:GetProfiles", Some(elem_qname.clone()));
 
         let mut handlers = HashMap::new();
         handlers.insert("GetProfiles".to_string(), mock_handler("GetProfiles"));
@@ -639,7 +673,8 @@ mod tests {
     #[test]
     fn auth_bypass_marks_entry_auth_not_required() {
         let elem_qname = QName::new("http://example.com", "GetProfiles");
-        let resolved = make_resolved_wsdl("GetProfiles", "urn:GetProfiles", Some(elem_qname.clone()));
+        let resolved =
+            make_resolved_wsdl("GetProfiles", "urn:GetProfiles", Some(elem_qname.clone()));
 
         let mut handlers = HashMap::new();
         handlers.insert("GetProfiles".to_string(), mock_handler("GetProfiles"));
@@ -655,7 +690,8 @@ mod tests {
     #[test]
     fn auth_required_by_default_for_non_bypass_op() {
         let elem_qname = QName::new("http://example.com", "SetSomething");
-        let resolved = make_resolved_wsdl("SetSomething", "urn:SetSomething", Some(elem_qname.clone()));
+        let resolved =
+            make_resolved_wsdl("SetSomething", "urn:SetSomething", Some(elem_qname.clone()));
 
         let mut handlers = HashMap::new();
         handlers.insert("SetSomething".to_string(), mock_handler("SetSomething"));
@@ -667,7 +703,10 @@ mod tests {
 
     // ── validate_request tests ────────────────────────────────────────────────
 
-    fn make_type_registry_with_required_field(type_qname: &QName, required_field: &str) -> TypeRegistry {
+    fn make_type_registry_with_required_field(
+        type_qname: &QName,
+        required_field: &str,
+    ) -> TypeRegistry {
         let element = XsdElement {
             name: Some(required_field.to_string()),
             min_occurs: 1,
@@ -748,7 +787,11 @@ mod tests {
     fn handler_name_matches_wsdl_operation_name_get_profiles() {
         // Regression: "GetProfiles" key in handlers must match "GetProfiles" operation in WSDL
         let elem_qname = QName::new("http://onvif.org/ver10/media/wsdl", "GetProfiles");
-        let resolved = make_resolved_wsdl("GetProfiles", "http://www.onvif.org/ver10/media/wsdl/GetProfiles", Some(elem_qname.clone()));
+        let resolved = make_resolved_wsdl(
+            "GetProfiles",
+            "http://www.onvif.org/ver10/media/wsdl/GetProfiles",
+            Some(elem_qname.clone()),
+        );
 
         let mut handlers = HashMap::new();
         handlers.insert("GetProfiles".to_string(), mock_handler("GetProfiles"));
@@ -1036,7 +1079,10 @@ mod tests {
         // RPC dispatch key: (soap:body namespace, operation name)
         let rpc_qname = QName::new("http://example.com/svc", "GetOp");
         let result = route(&table, &rpc_qname, None);
-        assert!(result.is_ok(), "Expected RPC QName to route successfully, got: {result:?}");
+        assert!(
+            result.is_ok(),
+            "Expected RPC QName to route successfully, got: {result:?}"
+        );
     }
 
     #[test]
@@ -1051,7 +1097,10 @@ mod tests {
         // Confirm the entry is in by_element keyed on the synthesized QName
         let rpc_qname = QName::new("http://example.com/svc", "GetOp");
         let result = route(&table, &rpc_qname, None);
-        assert!(result.is_ok(), "route by synthesized RPC QName should return Ok");
+        assert!(
+            result.is_ok(),
+            "route by synthesized RPC QName should return Ok"
+        );
     }
 
     #[test]
@@ -1068,7 +1117,10 @@ mod tests {
         // Should be keyed by (targetNamespace, opName)
         let fallback_qname = QName::new(&target_ns, "GetOp");
         let result = route(&table, &fallback_qname, None);
-        assert!(result.is_ok(), "RPC without namespace should fall back to targetNamespace, got: {result:?}");
+        assert!(
+            result.is_ok(),
+            "RPC without namespace should fall back to targetNamespace, got: {result:?}"
+        );
     }
 
     #[test]
@@ -1084,14 +1136,37 @@ mod tests {
         let mut handlers_b = HashMap::new();
         handlers_b.insert("OpB".to_string(), mock_handler("OpB"));
 
-        let table_a = build_dispatch_table_for_service("ServiceA", &resolved, handlers_a, &HashSet::new(), None).unwrap();
-        let table_b = build_dispatch_table_for_service("ServiceB", &resolved, handlers_b, &HashSet::new(), None).unwrap();
+        let table_a = build_dispatch_table_for_service(
+            "ServiceA",
+            &resolved,
+            handlers_a,
+            &HashSet::new(),
+            None,
+        )
+        .unwrap();
+        let table_b = build_dispatch_table_for_service(
+            "ServiceB",
+            &resolved,
+            handlers_b,
+            &HashSet::new(),
+            None,
+        )
+        .unwrap();
 
         // ServiceA table contains OpA
-        assert!(route(&table_a, &op_a_qname, None).is_ok(), "ServiceA should route OpA");
+        assert!(
+            route(&table_a, &op_a_qname, None).is_ok(),
+            "ServiceA should route OpA"
+        );
         // ServiceB table contains OpB
-        assert!(route(&table_b, &op_b_qname, None).is_ok(), "ServiceB should route OpB");
+        assert!(
+            route(&table_b, &op_b_qname, None).is_ok(),
+            "ServiceB should route OpB"
+        );
         // ServiceA table does NOT contain OpB
-        assert!(route(&table_a, &op_b_qname, None).is_err(), "ServiceA should NOT route OpB");
+        assert!(
+            route(&table_a, &op_b_qname, None).is_err(),
+            "ServiceA should NOT route OpB"
+        );
     }
 }

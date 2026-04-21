@@ -1,18 +1,20 @@
 // WS-Security UsernameToken parsing and verification
-use sha1::{Sha1, Digest};
-use base64::engine::general_purpose::STANDARD as BASE64;
-use base64::Engine;
-use quick_xml::events::Event;
-use quick_xml::Reader;
-use chrono::{DateTime, Utc};
-use std::collections::HashMap;
 use crate::fault::SoapFault;
 use crate::wssec::nonce_cache::RotatingNonceCache;
-use crate::wssec::timestamp::{parse_created, check_freshness};
+use crate::wssec::timestamp::{check_freshness, parse_created};
+use base64::engine::general_purpose::STANDARD as BASE64;
+use base64::Engine;
+use chrono::{DateTime, Utc};
+use quick_xml::events::Event;
+use quick_xml::Reader;
+use sha1::{Digest, Sha1};
+use std::collections::HashMap;
 
 // WS-Security namespaces
-const WSSE_NS: &str = "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd";
-const WSU_NS: &str = "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd";
+const WSSE_NS: &str =
+    "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd";
+const WSU_NS: &str =
+    "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd";
 const PASSWORD_DIGEST_TYPE: &str = "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordDigest";
 const PASSWORD_TEXT_TYPE: &str = "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordText";
 
@@ -38,7 +40,8 @@ pub struct UsernameToken {
 pub fn compute_digest(nonce_b64: &str, created: &str, password: &str) -> Result<String, SoapFault> {
     // Add padding if needed for base64 decoding
     let padded = add_base64_padding(nonce_b64);
-    let nonce_bytes = BASE64.decode(padded.as_str())
+    let nonce_bytes = BASE64
+        .decode(padded.as_str())
         .map_err(|e| SoapFault::sender(format!("Invalid nonce encoding: {e}")))?;
     let mut hasher = Sha1::new();
     hasher.update(&nonce_bytes);
@@ -156,16 +159,26 @@ pub fn parse_username_token(xml_bytes: &[u8]) -> Result<UsernameToken, SoapFault
                     "UsernameToken" => {
                         in_username_token = false;
                     }
-                    "Username" => { in_username_elem = false; }
-                    "Password" => { in_password_elem = false; }
-                    "Nonce" => { in_nonce_elem = false; }
-                    "Created" => { in_created_elem = false; }
+                    "Username" => {
+                        in_username_elem = false;
+                    }
+                    "Password" => {
+                        in_password_elem = false;
+                    }
+                    "Nonce" => {
+                        in_nonce_elem = false;
+                    }
+                    "Created" => {
+                        in_created_elem = false;
+                    }
                     _ => {}
                 }
             }
             Ok(Event::Eof) => break,
             Err(e) => {
-                return Err(SoapFault::sender(format!("WS-Security XML parse error: {e}")));
+                return Err(SoapFault::sender(format!(
+                    "WS-Security XML parse error: {e}"
+                )));
             }
             _ => {}
         }
@@ -176,8 +189,10 @@ pub fn parse_username_token(xml_bytes: &[u8]) -> Result<UsernameToken, SoapFault
         return Err(SoapFault::sender("Missing UsernameToken"));
     }
 
-    let username = username.ok_or_else(|| SoapFault::sender("Missing Username in UsernameToken"))?;
-    let password = password.ok_or_else(|| SoapFault::sender("Missing Password in UsernameToken"))?;
+    let username =
+        username.ok_or_else(|| SoapFault::sender("Missing Username in UsernameToken"))?;
+    let password =
+        password.ok_or_else(|| SoapFault::sender("Missing Password in UsernameToken"))?;
 
     Ok(UsernameToken {
         username,
@@ -200,15 +215,19 @@ pub fn validate_username_token(
 ) -> Result<String, SoapFault> {
     let token = parse_username_token(security_bytes)?;
 
-    let stored_password = get_password(&token.username)
-        .ok_or_else(|| SoapFault::sender("Unknown user"))?;
+    let stored_password =
+        get_password(&token.username).ok_or_else(|| SoapFault::sender("Unknown user"))?;
 
     // Verify password
     match token.password_type {
         PasswordType::Digest => {
-            let nonce = token.nonce.as_deref()
+            let nonce = token
+                .nonce
+                .as_deref()
                 .ok_or_else(|| SoapFault::sender("Missing Nonce for PasswordDigest"))?;
-            let created = token.created.as_deref()
+            let created = token
+                .created
+                .as_deref()
                 .ok_or_else(|| SoapFault::sender("Missing Created for PasswordDigest"))?;
             let expected = compute_digest(nonce, created, &stored_password)?;
             if expected != token.password {
@@ -272,8 +291,8 @@ fn resolve_ns(prefix: Option<&str>, ns_map: &HashMap<String, String>) -> Option<
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::TimeZone;
     use crate::wssec::nonce_cache::RotatingNonceCache;
+    use chrono::TimeZone;
 
     // Known test vector — self-consistent, independently verified with Python hashlib/base64.
     // Nonce raw bytes: [0x00, 0x01, ..., 0x0f] (16 bytes), base64-encoded.
@@ -331,8 +350,7 @@ mod tests {
     fn known_vector_digest_matches_expected() {
         let result = compute_digest(TEST_NONCE, TEST_CREATED, TEST_PASSWORD).unwrap();
         assert_eq!(
-            result,
-            TEST_EXPECTED_DIGEST,
+            result, TEST_EXPECTED_DIGEST,
             "PasswordDigest known vector failed: got {result}, expected {TEST_EXPECTED_DIGEST}"
         );
     }
@@ -422,16 +440,19 @@ mod tests {
 
     #[test]
     fn validate_unknown_user_returns_err() {
-        let xml = format!(r#"<wsse:Security xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd" xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd">
+        let xml = format!(
+            r#"<wsse:Security xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd" xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd">
   <wsse:UsernameToken>
     <wsse:Username>unknownuser</wsse:Username>
     <wsse:Password Type="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordDigest">{TEST_EXPECTED_DIGEST}</wsse:Password>
     <wsse:Nonce>{TEST_NONCE}</wsse:Nonce>
     <wsu:Created>{TEST_CREATED}</wsu:Created>
   </wsse:UsernameToken>
-</wsse:Security>"#);
+</wsse:Security>"#
+        );
         let mut cache = make_nonce_cache();
-        let result = validate_username_token(xml.as_bytes(), &get_password, &mut cache, 300, test_now());
+        let result =
+            validate_username_token(xml.as_bytes(), &get_password, &mut cache, 300, test_now());
         assert!(result.is_err());
         let fault = result.unwrap_err();
         assert!(
@@ -450,11 +471,7 @@ mod tests {
         let result = validate_username_token(&xml, &get_password, &mut cache, 300, expired_now);
         assert!(result.is_err());
         let fault = result.unwrap_err();
-        assert!(
-            fault.reason.contains("expired"),
-            "got: {}",
-            fault.reason
-        );
+        assert!(fault.reason.contains("expired"), "got: {}", fault.reason);
     }
 
     #[test]
@@ -467,11 +484,7 @@ mod tests {
         let result = validate_username_token(&xml, &get_password, &mut cache, 300, test_now());
         assert!(result.is_err());
         let fault = result.unwrap_err();
-        assert!(
-            fault.reason.contains("replay"),
-            "got: {}",
-            fault.reason
-        );
+        assert!(fault.reason.contains("replay"), "got: {}", fault.reason);
     }
 
     #[test]

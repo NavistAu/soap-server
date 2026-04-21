@@ -1,6 +1,6 @@
 // WS-Security timestamp validation
-use chrono::{DateTime, Utc, Duration};
 use crate::fault::SoapFault;
+use chrono::{DateTime, Duration, Utc};
 
 /// Parse an ISO 8601 datetime string (wsu:Created format).
 pub fn parse_created(s: &str) -> Result<DateTime<Utc>, SoapFault> {

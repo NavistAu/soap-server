@@ -1,10 +1,10 @@
 // XSD Pass 1 parser — DOM traversal via roxmltree producing RawSchema
-use std::collections::HashMap;
-use roxmltree::Node;
-use thiserror::Error;
 use crate::qname::QName;
-use crate::xsd::types::*;
 use crate::xsd::elements::*;
+use crate::xsd::types::*;
+use roxmltree::Node;
+use std::collections::HashMap;
+use thiserror::Error;
 
 /// XS namespace URI constant.
 pub const XS_NS: &str = "http://www.w3.org/2001/XMLSchema";
@@ -433,10 +433,12 @@ pub fn visit_element(node: Node<'_, '_>) -> XsdElement {
         .children()
         .filter(|n| n.is_element() && n.tag_name().namespace() == Some(XS_NS))
         .find_map(|child| match child.tag_name().name() {
-            "complexType" => Some(Box::new(XsdType::Complex(Box::new(visit_complex_type(child))))),
-            "simpleType" => {
-                Some(Box::new(XsdType::Simple(Box::new(visit_simple_type(child, node)))))
-            }
+            "complexType" => Some(Box::new(XsdType::Complex(Box::new(visit_complex_type(
+                child,
+            ))))),
+            "simpleType" => Some(Box::new(XsdType::Simple(Box::new(visit_simple_type(
+                child, node,
+            ))))),
             _ => None,
         });
 
@@ -604,12 +606,8 @@ pub fn visit_restriction(node: Node<'_, '_>, context: Node<'_, '_>) -> Restricti
             "maxInclusive" => max_inclusive = child.attribute("value").map(|s| s.to_string()),
             "minExclusive" => min_exclusive = child.attribute("value").map(|s| s.to_string()),
             "maxExclusive" => max_exclusive = child.attribute("value").map(|s| s.to_string()),
-            "minLength" => {
-                min_length = child.attribute("value").and_then(|v| v.parse().ok())
-            }
-            "maxLength" => {
-                max_length = child.attribute("value").and_then(|v| v.parse().ok())
-            }
+            "minLength" => min_length = child.attribute("value").and_then(|v| v.parse().ok()),
+            "maxLength" => max_length = child.attribute("value").and_then(|v| v.parse().ok()),
             "length" => length = child.attribute("value").and_then(|v| v.parse().ok()),
             "pattern" => pattern = child.attribute("value").map(|s| s.to_string()),
             "whiteSpace" => {
@@ -620,9 +618,7 @@ pub fn visit_restriction(node: Node<'_, '_>, context: Node<'_, '_>) -> Restricti
                     _ => None,
                 }
             }
-            "totalDigits" => {
-                total_digits = child.attribute("value").and_then(|v| v.parse().ok())
-            }
+            "totalDigits" => total_digits = child.attribute("value").and_then(|v| v.parse().ok()),
             "fractionDigits" => {
                 fraction_digits = child.attribute("value").and_then(|v| v.parse().ok())
             }
@@ -829,9 +825,15 @@ mod tests {
                  </xs:complexType>
                </xs:schema>"#,
         );
-        let ty = schema.types.get(&QName::new("urn:t", "Restricted")).unwrap();
+        let ty = schema
+            .types
+            .get(&QName::new("urn:t", "Restricted"))
+            .unwrap();
         if let XsdType::Complex(ct) = ty {
-            assert!(matches!(ct.content, ComplexContent::ComplexRestriction { .. }));
+            assert!(matches!(
+                ct.content,
+                ComplexContent::ComplexRestriction { .. }
+            ));
         }
     }
 
@@ -866,7 +868,10 @@ mod tests {
                  </xs:simpleType>
                </xs:schema>"#,
         );
-        let ty = schema.types.get(&QName::new("urn:t", "StringList")).unwrap();
+        let ty = schema
+            .types
+            .get(&QName::new("urn:t", "StringList"))
+            .unwrap();
         if let XsdType::Simple(st) = ty {
             assert!(st.list.is_some());
             assert_eq!(st.list.as_ref().unwrap().item_type.local_name, "string");
@@ -882,7 +887,10 @@ mod tests {
                  </xs:simpleType>
                </xs:schema>"#,
         );
-        let ty = schema.types.get(&QName::new("urn:t", "StringOrInt")).unwrap();
+        let ty = schema
+            .types
+            .get(&QName::new("urn:t", "StringOrInt"))
+            .unwrap();
         if let XsdType::Simple(st) = ty {
             let u = st.union.as_ref().unwrap();
             assert_eq!(u.member_types.len(), 2);

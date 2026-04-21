@@ -2,15 +2,14 @@
 // Produces WsdlDefinition with unresolved QName strings.
 // Pass 2 (resolver.rs) wires cross-references.
 
-use std::collections::HashMap;
-use thiserror::Error;
 use crate::qname::QName;
 use crate::wsdl::definitions::{
-    Binding, BindingMessage, BindingOperation, BindingStyle, Message, MessagePart,
-    Operation, OperationFault, OperationMessage, OperationStyle, Port, PortType,
-    Service, SoapBinding, SoapBody, SoapHeader, SoapVersion, TypesSection,
-    UseStyle, WsdlDefinition, WsdlImport,
+    Binding, BindingMessage, BindingOperation, BindingStyle, Message, MessagePart, Operation,
+    OperationFault, OperationMessage, OperationStyle, Port, PortType, Service, SoapBinding,
+    SoapBody, SoapHeader, SoapVersion, TypesSection, UseStyle, WsdlDefinition, WsdlImport,
 };
+use std::collections::HashMap;
+use thiserror::Error;
 
 // WSDL/SOAP namespaces
 const WSDL_NS: &str = "http://schemas.xmlsoap.org/wsdl/";
@@ -52,10 +51,7 @@ pub fn parse_wsdl(bytes: &[u8]) -> Result<WsdlDefinition, WsdlError> {
         )));
     }
 
-    let target_namespace = root
-        .attribute("targetNamespace")
-        .unwrap_or("")
-        .to_string();
+    let target_namespace = root.attribute("targetNamespace").unwrap_or("").to_string();
 
     let mut imports: Vec<WsdlImport> = Vec::new();
     let mut types = TypesSection::default();
@@ -115,12 +111,12 @@ pub fn parse_wsdl(bytes: &[u8]) -> Result<WsdlDefinition, WsdlError> {
 
 /// Parse a <wsdl:import> element.
 fn parse_import(node: roxmltree::Node) -> Result<WsdlImport, WsdlError> {
-    let namespace = node
-        .attribute("namespace")
-        .unwrap_or("")
-        .to_string();
+    let namespace = node.attribute("namespace").unwrap_or("").to_string();
     let location = node.attribute("location").map(|s| s.to_string());
-    Ok(WsdlImport { namespace, location })
+    Ok(WsdlImport {
+        namespace,
+        location,
+    })
 }
 
 /// Parse the <wsdl:types> section, collecting inline xs:schema nodes.
@@ -158,7 +154,10 @@ fn parse_message(node: roxmltree::Node) -> Result<Message, WsdlError> {
 }
 
 /// Parse a <wsdl:part> element.
-fn parse_message_part(node: roxmltree::Node, parent: roxmltree::Node) -> Result<MessagePart, WsdlError> {
+fn parse_message_part(
+    node: roxmltree::Node,
+    parent: roxmltree::Node,
+) -> Result<MessagePart, WsdlError> {
     let name = node
         .attribute("name")
         .ok_or_else(|| WsdlError::MissingAttribute("part/@name".to_string()))?
@@ -174,7 +173,11 @@ fn parse_message_part(node: roxmltree::Node, parent: roxmltree::Node) -> Result<
         .map(|v| resolve_qname_str(v, parent))
         .transpose()?;
 
-    Ok(MessagePart { name, element, type_ref })
+    Ok(MessagePart {
+        name,
+        element,
+        type_ref,
+    })
 }
 
 /// Parse a <wsdl:portType> element.
@@ -208,27 +211,40 @@ fn parse_operation(node: roxmltree::Node) -> Result<Operation, WsdlError> {
     for child in node.children().filter(|n| n.is_element()) {
         match child.tag_name().name() {
             "input" => {
-                let msg_attr = child.attribute("message")
+                let msg_attr = child
+                    .attribute("message")
                     .ok_or_else(|| WsdlError::MissingAttribute("input/@message".to_string()))?;
                 let message = resolve_qname_str(msg_attr, child)?;
                 let op_name = child.attribute("name").map(|s| s.to_string());
-                input = Some(OperationMessage { name: op_name, message });
+                input = Some(OperationMessage {
+                    name: op_name,
+                    message,
+                });
             }
             "output" => {
-                let msg_attr = child.attribute("message")
+                let msg_attr = child
+                    .attribute("message")
                     .ok_or_else(|| WsdlError::MissingAttribute("output/@message".to_string()))?;
                 let message = resolve_qname_str(msg_attr, child)?;
                 let op_name = child.attribute("name").map(|s| s.to_string());
-                output = Some(OperationMessage { name: op_name, message });
+                output = Some(OperationMessage {
+                    name: op_name,
+                    message,
+                });
             }
             "fault" => {
-                let fault_name = child.attribute("name")
+                let fault_name = child
+                    .attribute("name")
                     .ok_or_else(|| WsdlError::MissingAttribute("fault/@name".to_string()))?
                     .to_string();
-                let msg_attr = child.attribute("message")
+                let msg_attr = child
+                    .attribute("message")
                     .ok_or_else(|| WsdlError::MissingAttribute("fault/@message".to_string()))?;
                 let message = resolve_qname_str(msg_attr, child)?;
-                faults.push(OperationFault { name: fault_name, message });
+                faults.push(OperationFault {
+                    name: fault_name,
+                    message,
+                });
             }
             _ => {}
         }
@@ -241,7 +257,13 @@ fn parse_operation(node: roxmltree::Node) -> Result<Operation, WsdlError> {
         (false, false) => OperationStyle::OneWay,
     };
 
-    Ok(Operation { name, input, output, faults, style })
+    Ok(Operation {
+        name,
+        input,
+        output,
+        faults,
+        style,
+    })
 }
 
 /// Parse a <wsdl:binding> element.
@@ -287,7 +309,10 @@ fn parse_binding(node: roxmltree::Node) -> Result<Binding, WsdlError> {
                     .to_string();
             }
             ("operation", WSDL_NS) => {
-                operations.push(parse_binding_operation(child, soap_binding.soap_version.clone())?);
+                operations.push(parse_binding_operation(
+                    child,
+                    soap_binding.soap_version.clone(),
+                )?);
             }
             _ => {}
         }
@@ -321,11 +346,19 @@ fn parse_binding_operation(
 
     let mut soap_action = String::new();
     let mut input = BindingMessage {
-        body: SoapBody { use_attr: UseStyle::Literal, namespace: None, encoding_style: None },
+        body: SoapBody {
+            use_attr: UseStyle::Literal,
+            namespace: None,
+            encoding_style: None,
+        },
         headers: Vec::new(),
     };
     let mut output = BindingMessage {
-        body: SoapBody { use_attr: UseStyle::Literal, namespace: None, encoding_style: None },
+        body: SoapBody {
+            use_attr: UseStyle::Literal,
+            namespace: None,
+            encoding_style: None,
+        },
         headers: Vec::new(),
     };
 
@@ -340,10 +373,7 @@ fn parse_binding_operation(
 
         match (child_local, child_ns) {
             ("operation", ns) if ns == soap_op_ns => {
-                soap_action = child
-                    .attribute("soapAction")
-                    .unwrap_or("")
-                    .to_string();
+                soap_action = child.attribute("soapAction").unwrap_or("").to_string();
             }
             ("input", WSDL_NS) => {
                 input = parse_binding_message(child, soap_op_ns)?;
@@ -355,7 +385,12 @@ fn parse_binding_operation(
         }
     }
 
-    Ok(BindingOperation { name, soap_action, input, output })
+    Ok(BindingOperation {
+        name,
+        soap_action,
+        input,
+        output,
+    })
 }
 
 /// Parse a binding input/output message element.
@@ -385,10 +420,9 @@ fn parse_binding_message(
                     body.encoding_style = child.attribute("encodingStyle").map(|s| s.to_string());
                 }
                 "header" => {
-                    if let (Some(msg_str), Some(part)) = (
-                        child.attribute("message"),
-                        child.attribute("part"),
-                    ) {
+                    if let (Some(msg_str), Some(part)) =
+                        (child.attribute("message"), child.attribute("part"))
+                    {
                         let message = resolve_qname_str(msg_str, child)?;
                         headers.push(SoapHeader {
                             message,
@@ -441,7 +475,11 @@ fn parse_port(node: roxmltree::Node) -> Result<Port, WsdlError> {
         .unwrap_or("")
         .to_string();
 
-    Ok(Port { name, binding, address })
+    Ok(Port {
+        name,
+        binding,
+        address,
+    })
 }
 
 /// Resolve a "prefix:local" QName string using in-scope namespace bindings from `context_node`.
@@ -839,8 +877,13 @@ mod tests {
     #[test]
     fn inline_schema_nodes_collected() {
         let def = parse_wsdl(MINIMAL_WSDL_SOAP12.as_bytes()).unwrap();
-        assert!(!def.types.schemas.is_empty(), "Expected inline schema to be collected");
-        assert!(def.types.schemas[0].contains("xs:schema") || def.types.schemas[0].contains("schema"));
+        assert!(
+            !def.types.schemas.is_empty(),
+            "Expected inline schema to be collected"
+        );
+        assert!(
+            def.types.schemas[0].contains("xs:schema") || def.types.schemas[0].contains("schema")
+        );
     }
 
     // ---- Multiple operations test ----
@@ -872,7 +915,10 @@ mod tests {
   <message name="M1"><part name="p" element="tns:E1"/></message>
 </definitions>"#;
         let result = parse_wsdl(wsdl.as_bytes());
-        assert!(result.is_ok(), "Should not error on unknown elements: {result:?}");
+        assert!(
+            result.is_ok(),
+            "Should not error on unknown elements: {result:?}"
+        );
         let def = result.unwrap();
         assert!(def.messages.contains_key("M1"));
     }
