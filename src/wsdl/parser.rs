@@ -481,7 +481,7 @@ fn serialize_node(node: roxmltree::Node, out: &mut String) {
         // the parent document's default namespace (e.g. WSDL namespace) must not bleed in.
         let prefix = find_prefix_for_ns(node, ns_uri);
         let qualified_name = match &prefix {
-            Some(p) if !p.is_empty() => format!("{}:{}", p, local),
+            Some(p) if !p.is_empty() => format!("{p}:{local}"),
             _ => local.to_string(),
         };
 
@@ -872,7 +872,7 @@ mod tests {
   <message name="M1"><part name="p" element="tns:E1"/></message>
 </definitions>"#;
         let result = parse_wsdl(wsdl.as_bytes());
-        assert!(result.is_ok(), "Should not error on unknown elements: {:?}", result);
+        assert!(result.is_ok(), "Should not error on unknown elements: {result:?}");
         let def = result.unwrap();
         assert!(def.messages.contains_key("M1"));
     }

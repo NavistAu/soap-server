@@ -16,7 +16,7 @@ pub struct NullSchemaLoader;
 
 impl SchemaLoader for NullSchemaLoader {
     fn load(&self, _namespace: Option<&str>, location: &str) -> Result<String, SchemaError> {
-        Err(SchemaError::UnknownRef(format!("NullSchemaLoader cannot load: {}", location)))
+        Err(SchemaError::UnknownRef(format!("NullSchemaLoader cannot load: {location}")))
     }
 }
 
@@ -67,7 +67,7 @@ pub fn resolve_schema(
 
     // Merge resolved complex types into registry.
     for (qname, ct) in resolved {
-        registry.insert(qname, XsdType::Complex(ct));
+        registry.insert(qname, XsdType::Complex(Box::new(ct)));
     }
 
     Ok(registry)
@@ -268,6 +268,7 @@ fn extract_elements(content: &ComplexContent) -> Vec<XsdElement> {
 }
 
 /// Resolve a list of elements, inlining xs:group refs and resolving xs:element refs.
+#[allow(clippy::only_used_in_recursion)]
 fn resolve_element_list(
     elements: &[XsdElement],
     flat: &FlatTypeMap,
@@ -453,8 +454,7 @@ mod tests {
         let result = parse_and_resolve(xml);
         assert!(
             matches!(result, Err(SchemaError::CycleDetected(_))),
-            "Self-referencing type must produce CycleDetected, got: {:?}",
-            result
+            "Self-referencing type must produce CycleDetected, got: {result:?}"
         );
     }
 
@@ -527,7 +527,7 @@ mod tests {
 
         // D.xsd should have been loaded exactly once.
         let count = loader.load_count.load(std::sync::atomic::Ordering::SeqCst);
-        assert_eq!(count, 3, "Should load B.xsd, C.xsd, D.xsd — D only once. Got: {}", count);
+        assert_eq!(count, 3, "Should load B.xsd, C.xsd, D.xsd — D only once. Got: {count}");
 
         // All types from B, C, D should be in registry.
         assert!(registry.lookup(&QName::new("urn:b", "BType")).is_some());

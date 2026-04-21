@@ -159,14 +159,12 @@ pub fn rewrite_wsdl_address(bytes: &[u8], new_url: &str) -> Vec<u8> {
                     let name_bytes = e.name().as_ref().to_vec();
                     let name_str = String::from_utf8(name_bytes).unwrap_or_else(|_| "address".to_string());
                     let mut new_start = BytesStart::new(name_str.as_str());
-                    for attr_result in e.attributes() {
-                        if let Ok(attr) = attr_result {
-                            let attr_key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
-                            if attr_key == "location" {
-                                new_start.push_attribute(("location", new_url));
-                            } else {
-                                new_start.push_attribute(attr);
-                            }
+                    for attr in e.attributes().flatten() {
+                        let attr_key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
+                        if attr_key == "location" {
+                            new_start.push_attribute(("location", new_url));
+                        } else {
+                            new_start.push_attribute(attr);
                         }
                     }
                     let _ = writer.write_event(Event::Start(new_start));
@@ -182,14 +180,12 @@ pub fn rewrite_wsdl_address(bytes: &[u8], new_url: &str) -> Vec<u8> {
                     let name_bytes = e.name().as_ref().to_vec();
                     let name_str = String::from_utf8(name_bytes).unwrap_or_else(|_| "address".to_string());
                     let mut new_empty = BytesStart::new(name_str.as_str());
-                    for attr_result in e.attributes() {
-                        if let Ok(attr) = attr_result {
-                            let attr_key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
-                            if attr_key == "location" {
-                                new_empty.push_attribute(("location", new_url));
-                            } else {
-                                new_empty.push_attribute(attr);
-                            }
+                    for attr in e.attributes().flatten() {
+                        let attr_key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
+                        if attr_key == "location" {
+                            new_empty.push_attribute(("location", new_url));
+                        } else {
+                            new_empty.push_attribute(attr);
                         }
                     }
                     let _ = writer.write_event(Event::Empty(new_empty));
@@ -376,7 +372,7 @@ mod tests {
     struct NullWsdlLoader;
     impl WsdlLoader for NullWsdlLoader {
         fn load(&self, location: &str) -> Result<Vec<u8>, WsdlError> {
-            Err(WsdlError::MalformedXml(format!("NullWsdlLoader cannot load: {}", location)))
+            Err(WsdlError::MalformedXml(format!("NullWsdlLoader cannot load: {location}")))
         }
     }
 
@@ -385,7 +381,7 @@ mod tests {
         fn load(&self, location: &str) -> Result<Vec<u8>, WsdlError> {
             match location {
                 "imported.wsdl" => Ok(IMPORTED_WSDL.as_bytes().to_vec()),
-                _ => Err(WsdlError::MalformedXml(format!("Unknown location: {}", location))),
+                _ => Err(WsdlError::MalformedXml(format!("Unknown location: {location}"))),
             }
         }
     }
@@ -400,7 +396,7 @@ mod tests {
                 "b.wsdl" => Ok(DIAMOND_B_WSDL.as_bytes().to_vec()),
                 "c.wsdl" => Ok(DIAMOND_C_WSDL.as_bytes().to_vec()),
                 "d.wsdl" => Ok(DIAMOND_D_WSDL.as_bytes().to_vec()),
-                _ => Err(WsdlError::MalformedXml(format!("Unknown: {}", location))),
+                _ => Err(WsdlError::MalformedXml(format!("Unknown: {location}"))),
             }
         }
     }
@@ -418,7 +414,7 @@ mod tests {
 </definitions>"#;
                     Ok(b.as_bytes().to_vec())
                 }
-                _ => Err(WsdlError::MalformedXml(format!("Unknown: {}", location))),
+                _ => Err(WsdlError::MalformedXml(format!("Unknown: {location}"))),
             }
         }
     }
@@ -470,7 +466,7 @@ mod tests {
 
         // Should have loaded b.wsdl, c.wsdl, d.wsdl — d only once
         let count = load_count.load(std::sync::atomic::Ordering::SeqCst);
-        assert_eq!(count, 3, "Expected 3 loader calls (b, c, d). Got: {}", count);
+        assert_eq!(count, 3, "Expected 3 loader calls (b, c, d). Got: {count}");
     }
 
     #[test]
@@ -504,7 +500,7 @@ mod tests {
         // With visited containing "a.wsdl", when B tries to import "a.wsdl" it's skipped
         // So this should succeed (no cycle error needed for this pattern)
         // The cycle guard is: b.wsdl is loaded, then it tries to load a.wsdl but a.wsdl is already in visited
-        assert!(result.is_ok(), "Cycle guard should prevent infinite recursion: {:?}", result);
+        assert!(result.is_ok(), "Cycle guard should prevent infinite recursion: {result:?}");
     }
 
     #[test]

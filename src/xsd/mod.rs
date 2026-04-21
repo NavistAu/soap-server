@@ -4,7 +4,3 @@ pub mod parser;
 pub mod resolver;
 pub mod types;
 
-pub use types::{XsdType, ComplexType, SimpleType, TypeRegistry};
-pub use elements::{XsdElement, XsdAttribute, MaxOccurs};
-pub use parser::{parse_schema, RawSchema, SchemaImport, SchemaInclude, SchemaError};
-pub use resolver::{resolve_schema, SchemaLoader, NullSchemaLoader};

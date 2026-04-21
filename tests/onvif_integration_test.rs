@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 use axum_test::TestServer;
 use bytes::Bytes;
 use soap_server::{
-    compute_digest, FaultCode, FnHandler, SoapFault, ServerBuilder, WsdlError, WsdlLoader,
+    compute_digest, FnHandler, SoapFault, ServerBuilder, WsdlError, WsdlLoader,
 };
 
 // ── FixtureLoader ─────────────────────────────────────────────────────────────
@@ -31,7 +31,7 @@ impl WsdlLoader for FixtureLoader {
         // Extract the basename from the location path.
         let basename = location
             .split('/')
-            .last()
+            .next_back()
             .unwrap_or(location);
 
         // Map known fixture filenames to their on-disk paths.
@@ -76,12 +76,12 @@ fn format_wsu_created(unix_secs: u64) -> String {
     // Gregorian calendar from days since 1970-01-01
     let (year, month, day) = days_to_ymd(days);
 
-    format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.000Z", year, month, day, hour, minute, second)
+    format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}.000Z")
 }
 
 fn days_to_ymd(days: u64) -> (u64, u64, u64) {
     // Algorithm: convert days since Unix epoch (1970-01-01) to (year, month, day)
-    let mut remaining = days as i64 + 719468; // shift to civil epoch (0001-03-01 = day 0)
+    let remaining = days as i64 + 719468; // shift to civil epoch (0001-03-01 = day 0)
     let era = if remaining >= 0 { remaining } else { remaining - 146096 } / 146097;
     let doe = remaining - era * 146097;
     let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;

@@ -6,8 +6,8 @@ use crate::xsd::elements::{XsdElement, XsdAttribute};
 /// Top-level XSD type — either complex or simple.
 #[derive(Debug, Clone)]
 pub enum XsdType {
-    Complex(ComplexType),
-    Simple(SimpleType),
+    Complex(Box<ComplexType>),
+    Simple(Box<SimpleType>),
 }
 
 /// An XSD complexType definition.
@@ -186,12 +186,12 @@ mod tests {
     fn type_registry_insert_and_lookup() {
         let mut reg = TypeRegistry::new();
         let qname = QName::local("Foo");
-        let ty = XsdType::Simple(SimpleType {
+        let ty = XsdType::Simple(Box::new(SimpleType {
             name: Some("Foo".to_string()),
             restriction: None,
             list: None,
             union: None,
-        });
+        }));
         reg.insert(qname.clone(), ty);
         assert!(reg.lookup(&qname).is_some());
         assert_eq!(reg.len(), 1);

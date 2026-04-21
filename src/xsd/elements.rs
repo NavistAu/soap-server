@@ -52,17 +52,14 @@ pub struct XsdAttribute {
 
 /// The use attribute for XSD attributes.
 #[derive(Debug, Clone, PartialEq)]
+#[derive(Default)]
 pub enum AttributeUse {
     Required,
+    #[default]
     Optional,
     Prohibited,
 }
 
-impl Default for AttributeUse {
-    fn default() -> Self {
-        AttributeUse::Optional
-    }
-}
 
 /// A named group of attributes (xs:attributeGroup).
 #[derive(Debug, Clone)]
@@ -89,6 +86,7 @@ pub enum GroupContent {
 
 /// An xs:any wildcard element.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct AnyElement {
     pub namespace: AnyNamespace,
     pub process_contents: ProcessContents,
@@ -114,6 +112,7 @@ pub enum ProcessContents {
 
 /// An xs:anyAttribute wildcard attribute.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct AnyAttribute {
     pub namespace: AnyNamespace,
     pub process_contents: ProcessContents,

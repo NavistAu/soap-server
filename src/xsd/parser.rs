@@ -36,6 +36,7 @@ pub struct SchemaInclude {
 /// Pass 1 result: all types and elements collected from one XSD schema node.
 /// QName references are stored as URIs resolved from the node's namespace context.
 /// Resolution of forward-references between schemas happens in pass 2.
+#[allow(dead_code)]
 pub struct RawSchema {
     pub target_namespace: Option<String>,
     pub types: HashMap<QName, XsdType>,
@@ -122,7 +123,7 @@ pub fn parse_schema(node: Node<'_, '_>) -> Result<RawSchema, SchemaError> {
                     .attribute("name")
                     .map(|n| qualify_name(n, target_namespace.as_deref()));
                 if let Some(qname) = name {
-                    schema.types.insert(qname, XsdType::Complex(ct));
+                    schema.types.insert(qname, XsdType::Complex(Box::new(ct)));
                 }
             }
             "simpleType" => {
@@ -131,7 +132,7 @@ pub fn parse_schema(node: Node<'_, '_>) -> Result<RawSchema, SchemaError> {
                     .attribute("name")
                     .map(|n| qualify_name(n, target_namespace.as_deref()));
                 if let Some(qname) = name {
-                    schema.types.insert(qname, XsdType::Simple(st));
+                    schema.types.insert(qname, XsdType::Simple(Box::new(st)));
                 }
             }
             "element" => {
@@ -432,9 +433,9 @@ pub fn visit_element(node: Node<'_, '_>) -> XsdElement {
         .children()
         .filter(|n| n.is_element() && n.tag_name().namespace() == Some(XS_NS))
         .find_map(|child| match child.tag_name().name() {
-            "complexType" => Some(Box::new(XsdType::Complex(visit_complex_type(child)))),
+            "complexType" => Some(Box::new(XsdType::Complex(Box::new(visit_complex_type(child))))),
             "simpleType" => {
-                Some(Box::new(XsdType::Simple(visit_simple_type(child, node))))
+                Some(Box::new(XsdType::Simple(Box::new(visit_simple_type(child, node)))))
             }
             _ => None,
         });
@@ -986,7 +987,7 @@ mod tests {
                  </xs:complexType>
                </xs:schema>"#,
         );
-        assert!(schema.types.get(&QName::new("urn:t", "Foo")).is_some());
+        assert!(schema.types.contains_key(&QName::new("urn:t", "Foo")));
     }
 
     #[test]

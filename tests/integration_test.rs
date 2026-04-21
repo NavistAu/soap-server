@@ -3,7 +3,7 @@
 
 use axum_test::TestServer;
 use bytes::Bytes;
-use soap_server::{FaultCode, FnHandler, ServerBuilder, SoapFault};
+use soap_server::{FnHandler, ServerBuilder, SoapFault};
 
 // ── Multi-service WSDL: ServiceA at /soap/a, ServiceB at /soap/b ──────────────
 const MULTI_SERVICE_WSDL: &[u8] = br#"<?xml version="1.0" encoding="utf-8"?>
@@ -517,9 +517,7 @@ async fn multi_service_routing() {
     let server = TestServer::new(router);
 
     // POST to /soap/a with ServiceA's operation (OpA) → 200
-    let body_a = format!(
-        r#"<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope" xmlns:tns="http://example.com/multi"><env:Body><tns:OpA/></env:Body></env:Envelope>"#
-    );
+    let body_a = r#"<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope" xmlns:tns="http://example.com/multi"><env:Body><tns:OpA/></env:Body></env:Envelope>"#.to_string();
     let resp = server
         .post("/soap/a")
         .bytes(axum::body::Bytes::from(body_a.into_bytes()))
@@ -530,9 +528,7 @@ async fn multi_service_routing() {
     assert!(text.contains("OpAResponse"), "Expected OpAResponse, got: {text}");
 
     // POST to /soap/b with ServiceB's operation (OpB) → 200
-    let body_b = format!(
-        r#"<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope" xmlns:tns="http://example.com/multi"><env:Body><tns:OpB/></env:Body></env:Envelope>"#
-    );
+    let body_b = r#"<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope" xmlns:tns="http://example.com/multi"><env:Body><tns:OpB/></env:Body></env:Envelope>"#.to_string();
     let resp = server
         .post("/soap/b")
         .bytes(axum::body::Bytes::from(body_b.into_bytes()))
@@ -543,9 +539,7 @@ async fn multi_service_routing() {
     assert!(text.contains("OpBResponse"), "Expected OpBResponse, got: {text}");
 
     // POST to /soap/a with ServiceB's operation (OpB) → 500 fault (not found in ServiceA's table)
-    let body_b_wrong_path = format!(
-        r#"<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope" xmlns:tns="http://example.com/multi"><env:Body><tns:OpB/></env:Body></env:Envelope>"#
-    );
+    let body_b_wrong_path = r#"<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope" xmlns:tns="http://example.com/multi"><env:Body><tns:OpB/></env:Body></env:Envelope>"#.to_string();
     let resp = server
         .post("/soap/a")
         .bytes(axum::body::Bytes::from(body_b_wrong_path.into_bytes()))

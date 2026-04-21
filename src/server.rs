@@ -30,6 +30,9 @@ const DEFAULT_NONCE_CACHE_HALF_WINDOW_SECS: u64 = 150;
 /// Default timestamp tolerance in seconds (±300s).
 const DEFAULT_TIMESTAMP_TOLERANCE_SECS: i64 = 300;
 
+/// Authentication function type: takes a raw Authorization header value and returns a username if valid.
+type AuthFn = Option<Arc<dyn Fn(&str) -> Option<String> + Send + Sync + 'static>>;
+
 // ── ServerBuilder ─────────────────────────────────────────────────────────────
 
 /// Builder for a SoapService. Accumulates WSDL source, handlers, auth config, and routing.
@@ -39,7 +42,7 @@ pub struct ServerBuilder {
     custom_loader: Option<Arc<dyn WsdlLoader>>,
     handlers: HashMap<String, Arc<dyn SoapHandler>>,
     default_handler: Option<Arc<dyn SoapHandler>>,
-    auth_fn: Option<Arc<dyn Fn(&str) -> Option<String> + Send + Sync + 'static>>,
+    auth_fn: AuthFn,
     auth_bypass: HashSet<String>,
     mount_path: String,
     timestamp_tolerance_secs: i64,
@@ -351,7 +354,7 @@ fn normalize_path(path: &std::path::Path) -> std::path::PathBuf {
 /// Extract the path component from a URL string (e.g., "http://host/soap/ServiceA" → "/soap/ServiceA").
 /// Falls back to "/" if the URL has no path.
 fn extract_path_from_url(url: &str) -> String {
-    if let Some(after_scheme) = url.splitn(2, "://").nth(1) {
+    if let Some(after_scheme) = url.split_once("://").map(|x| x.1) {
         if let Some(slash_pos) = after_scheme.find('/') {
             return after_scheme[slash_pos..].to_string();
         }
@@ -375,7 +378,7 @@ pub struct SoapService {
     service_tables: HashMap<String, Arc<DispatchTable>>,
     type_registry: Arc<TypeRegistry>,
     wsdl_raw: Arc<Vec<u8>>,
-    auth_fn: Option<Arc<dyn Fn(&str) -> Option<String> + Send + Sync + 'static>>,
+    auth_fn: AuthFn,
     nonce_cache: Arc<Mutex<RotatingNonceCache>>,
     timestamp_tolerance_secs: i64,
     mount_path: String,
@@ -749,7 +752,7 @@ async fn wsdl_get_handler(
         .map(|mp| mp.as_str())
         .unwrap_or(&svc.mount_path);
 
-    let server_url = format!("http://{}{}", host, path);
+    let server_url = format!("http://{host}{path}");
 
     let rewritten = rewrite_wsdl_address(&svc.wsdl_raw, &server_url);
 
