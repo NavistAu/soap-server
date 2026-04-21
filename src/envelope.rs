@@ -116,7 +116,7 @@ pub fn parse_envelope(input: &[u8]) -> Result<ParsedEnvelope, SoapFault> {
         return Err(SoapFault::sender("Missing Body"));
     }
 
-    let body_element = body_element.unwrap_or_else(|| Bytes::new());
+    let body_element = body_element.unwrap_or_default();
 
     Ok(ParsedEnvelope {
         soap_version,

@@ -133,7 +133,7 @@ fn collect_ops_for_service(
 
     // If no services defined (and collecting for all), fall back to all bindings directly.
     if all_binding_ops.is_empty() && service_name.is_none() {
-        for (_binding_name, binding) in &resolved.definition.bindings {
+        for binding in resolved.definition.bindings.values() {
             let style = binding.soap_binding.style.clone();
             for binding_op in &binding.operations {
                 let rpc_ns = if style == BindingStyle::Rpc {
@@ -241,7 +241,7 @@ fn build_dispatch_table_from_ops(
 /// first part element reference.
 fn resolve_input_element(resolved: &ResolvedWsdl, op_name: &str) -> Option<QName> {
     // Search all port_types for this operation.
-    for (_pt_name, port_type) in &resolved.definition.port_types {
+    for port_type in resolved.definition.port_types.values() {
         for op in &port_type.operations {
             if op.name != op_name {
                 continue;
@@ -322,8 +322,7 @@ pub fn validate_request(
     for required in &required_names {
         if !present_children.contains(required) {
             return Err(SoapFault::sender(format!(
-                "Schema validation failed: required element '{}' is missing",
-                required
+                "Schema validation failed: required element '{required}' is missing"
             )));
         }
     }
@@ -449,7 +448,7 @@ mod tests {
         input_element_qname: Option<QName>,
     ) -> ResolvedWsdl {
         let target_ns = "http://example.com/service".to_string();
-        let msg_name = format!("{}Request", op_name);
+        let msg_name = format!("{op_name}Request");
 
         // Message: one part with the element reference
         let part = MessagePart {
@@ -680,7 +679,7 @@ mod tests {
             attributes: vec![],
         };
         let mut reg = TypeRegistry::new();
-        reg.insert(type_qname.clone(), XsdType::Complex(ct));
+        reg.insert(type_qname.clone(), XsdType::Complex(Box::new(ct)));
         reg
     }
 
@@ -706,7 +705,7 @@ mod tests {
 
         let body = b"<GetProfiles xmlns=\"http://example.com\"><Token>1234</Token></GetProfiles>";
         let result = validate_request(body, &reg, Some(&qname));
-        assert!(result.is_ok(), "Expected Ok, got: {:?}", result);
+        assert!(result.is_ok(), "Expected Ok, got: {result:?}");
     }
 
     #[test]
@@ -738,7 +737,7 @@ mod tests {
             attributes: vec![],
         };
         let mut reg = TypeRegistry::new();
-        reg.insert(qname.clone(), XsdType::Complex(ct));
+        reg.insert(qname.clone(), XsdType::Complex(Box::new(ct)));
 
         let body = b"<GetProfiles xmlns=\"http://example.com\"></GetProfiles>";
         let result = validate_request(body, &reg, Some(&qname));
@@ -768,7 +767,7 @@ mod tests {
         rpc_namespace: Option<&str>,
     ) -> ResolvedWsdl {
         let target_ns = "http://example.com/service".to_string();
-        let msg_name = format!("{}Request", op_name);
+        let msg_name = format!("{op_name}Request");
 
         // Message: one part with type_ref (RPC style — no element ref)
         let part = MessagePart {
@@ -1037,7 +1036,7 @@ mod tests {
         // RPC dispatch key: (soap:body namespace, operation name)
         let rpc_qname = QName::new("http://example.com/svc", "GetOp");
         let result = route(&table, &rpc_qname, None);
-        assert!(result.is_ok(), "Expected RPC QName to route successfully, got: {:?}", result);
+        assert!(result.is_ok(), "Expected RPC QName to route successfully, got: {result:?}");
     }
 
     #[test]
@@ -1069,7 +1068,7 @@ mod tests {
         // Should be keyed by (targetNamespace, opName)
         let fallback_qname = QName::new(&target_ns, "GetOp");
         let result = route(&table, &fallback_qname, None);
-        assert!(result.is_ok(), "RPC without namespace should fall back to targetNamespace, got: {:?}", result);
+        assert!(result.is_ok(), "RPC without namespace should fall back to targetNamespace, got: {result:?}");
     }
 
     #[test]
