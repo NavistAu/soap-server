@@ -122,3 +122,12 @@ Each task was committed atomically:
 ---
 *Phase: 01-onvif-level-support*
 *Completed: 2026-04-03*
+
+## Self-Check: PASSED
+
+- FOUND: src/xsd/resolver.rs
+- FOUND: src/xsd/mod.rs
+- FOUND: src/wssec/username_token.rs
+- FOUND: .planning/phases/01-onvif-level-support/01-05-SUMMARY.md
+- FOUND: commit 1b1d928 (feat task)
+- FOUND: commit 1187ab5 (docs metadata)

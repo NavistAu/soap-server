@@ -91,7 +91,7 @@ Each task was committed atomically:
 1. **Task 1: Create Cargo.toml with all locked dependencies** - `9d86835` (chore)
 2. **Task 2: Create src/lib.rs module skeleton and ONVIF test fixtures** - `69ebc86` (feat)
 
-**Plan metadata:** (pending final docs commit)
+**Plan metadata:** `aaa3bf7` (docs: complete crate bootstrap plan)
 
 ## Files Created/Modified
 

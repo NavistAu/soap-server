@@ -47,7 +47,7 @@ Given a WSDL file and handler functions, the crate serves a fully spec-compliant
 
 ## Context
 
-Part of the Fovealink project — an ONVIF PTZ proxy for Reolink cameras. Dependency chain: `soap-server` <- `onvif-server` <- `fovealink`. Full system design at `~/ws/fovealink/docs/superpowers/specs/2026-04-03-fovealink-design.md`.
+General-purpose SOAP server foundation crate. Dependency chain: `soap-server` <- `onvif-server`. Publishes to crates.io under NavistAu ownership.
 
 **Shipped v1.0** with 7,825 LOC Rust (src/) + 1,314 LOC tests across 22 files. 205 tests (186 unit + 12 integration + 7 ONVIF). Built in 3 days (2026-04-03 to 2026-04-05), 71 commits across 4 phases (16 plans).
 
