@@ -9,8 +9,9 @@ soap-server = { path = ".." }
 quick-xml = "0.39"
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
+bytes = "1"
+axum-test = "20"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
-axum-test = "20"
 similar-asserts = "1"

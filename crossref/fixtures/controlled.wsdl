@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<wsdl:definitions
+    xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+    xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap12/"
+    xmlns:xs="http://www.w3.org/2001/XMLSchema"
+    xmlns:tns="http://crossref.example/controlled"
+    targetNamespace="http://crossref.example/controlled">
+  <wsdl:types>
+    <xs:schema targetNamespace="http://crossref.example/controlled" elementFormDefault="qualified">
+      <xs:element name="Echo">
+        <xs:complexType><xs:sequence>
+          <xs:element name="Text" type="xs:string" minOccurs="1"/>
+        </xs:sequence></xs:complexType>
+      </xs:element>
+      <xs:element name="EchoResponse">
+        <xs:complexType><xs:sequence>
+          <xs:element name="Text" type="xs:string" minOccurs="1"/>
+        </xs:sequence></xs:complexType>
+      </xs:element>
+    </xs:schema>
+  </wsdl:types>
+  <wsdl:message name="EchoRequest"><wsdl:part name="parameters" element="tns:Echo"/></wsdl:message>
+  <wsdl:message name="EchoResponse"><wsdl:part name="parameters" element="tns:EchoResponse"/></wsdl:message>
+  <wsdl:portType name="ControlledPort">
+    <wsdl:operation name="Echo">
+      <wsdl:input message="tns:EchoRequest"/>
+      <wsdl:output message="tns:EchoResponse"/>
+    </wsdl:operation>
+  </wsdl:portType>
+  <wsdl:binding name="ControlledBinding" type="tns:ControlledPort">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <wsdl:operation name="Echo">
+      <soap:operation soapAction="http://crossref.example/controlled/Echo"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+  </wsdl:binding>
+  <wsdl:service name="ControlledService">
+    <wsdl:port name="ControlledPort" binding="tns:ControlledBinding">
+      <soap:address location="http://localhost/soap"/>
+    </wsdl:port>
+  </wsdl:service>
+</wsdl:definitions>
