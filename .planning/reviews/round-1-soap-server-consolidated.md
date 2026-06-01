@@ -116,6 +116,29 @@ Both reviewers identified:
 
 3. **docs.yml GH Pages configuration (NB-SS-C01):** Fix the YAML duplicate key now (trivial fix) or defer to plan 05-07. Recommended: fix now in plan 05-05 since it's a one-line YAML fix.
 
+## Plan 05-05 Status
+
+**Blockers fixed:** All 8 (BLOCK-SS-C01 through BLOCK-SS-C08) + NB-SS-C01 (trivial fix).
+
+**Decisions made:**
+- BLOCK-SS-C05: `compute_digest` — marked `#[doc(hidden)]` with precise encoding-contract rustdoc. onvif-server does not call it directly (confirmed by grep). Safe choice: internal API with clear documentation.
+- BLOCK-SS-C08: `FaultCode::as_str()` — renamed to `as_soap12_str()` + added `as_soap11_str()`. All internal callers and tests updated. Breaking change is safe at 0.1.0.
+- NB-SS-C01: Fixed immediately (trivial YAML one-liner, as recommended).
+
+**Known limitations for v0.2+ (not fixed in 05-05):**
+
+- NB-SS-C02: WSDL address rewriting always uses http:// — known limitation for v0.2+
+- NB-SS-C03: `DispatchError` and `BuildError` have no `From` impl — known limitation for v0.2+
+- NB-SS-C04: `ServerBuilder::new()` is private — document entry points in README (plan 05-07)
+- NB-SS-C05: `DispatchEntry` fields are all `pub` — known limitation for v0.2+
+- NB-SS-C06: `SoapFault` fields are `pub` — intentional, documented as known pattern
+- NB-SS-C07: `WsdlLoader::load()` lacks rustdoc — known limitation for v0.2+
+- NB-SS-C08: No optional feature flags for WS-Security — known limitation for v0.2+
+- NB-SS-C09: Cargo.toml description says "SOAP 1.2" only — fix in plan 05-08
+- NB-SS-C10: `SoapService` has no rustdoc — plan 05-07
+- NB-SS-C11: No examples/ directory — plan 05-07
+- NB-SS-C12: `build_dispatch_table_for_service` not re-exported — known limitation for v0.2+
+
 ## Already Planned (skip — do not list as blockers)
 
 - No README → plan 05-07
