@@ -1,0 +1,1 @@
+<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope"><env:Body><c:EchoResponse xmlns:c="http://crossref.example/controlled"><c:Text>hello</c:Text></c:EchoResponse></env:Body></env:Envelope>
