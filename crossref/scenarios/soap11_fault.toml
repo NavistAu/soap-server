@@ -1,0 +1,13 @@
+name = "soap11_fault"
+operation = "Echo"
+http_method = "POST"
+http_path = "/soap"
+content_type = "text/xml; charset=utf-8"
+soap_version = "1.1"
+expected_status = 500
+outcome = "fault"
+request_file = "soap11_fault.request.xml"
+
+[fault]
+code = "Client"
+detail_policy = "absent"
