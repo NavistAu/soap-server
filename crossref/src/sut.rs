@@ -6,6 +6,7 @@ use bytes::Bytes;
 use soap_server::{FnHandler, ServerBuilder};
 
 pub const CONTROLLED_WSDL: &[u8] = include_bytes!("../fixtures/controlled.wsdl");
+pub const MULTI_SERVICE_WSDL: &[u8] = include_bytes!("../fixtures/multi_service.wsdl");
 
 pub struct Response {
     pub status: u16,
@@ -180,6 +181,32 @@ pub fn build_controlled_sut_authed_strict() -> Sut {
         .timestamp_tolerance_secs(300)
         .build()
         .expect("authed-strict controlled WSDL should build without error");
+    let server = TestServer::new(svc.into_router());
+    Sut { server }
+}
+
+/// Build the multi-service SUT from multi_service.wsdl (ServiceA at /soap/a, ServiceB at /soap/b).
+/// Used for wsdl_rewrite_multi scenarios (Group E).
+pub fn build_multi_service_sut() -> Sut {
+    let svc = ServerBuilder::from_wsdl_bytes(MULTI_SERVICE_WSDL.to_vec())
+        .handler(
+            "OpA",
+            FnHandler::new(|_body: Bytes| async move {
+                Ok::<Bytes, soap_server::SoapFault>(Bytes::from_static(
+                    b"<tns:OpAResponse xmlns:tns=\"http://example.com/multi\"/>",
+                ))
+            }),
+        )
+        .handler(
+            "OpB",
+            FnHandler::new(|_body: Bytes| async move {
+                Ok::<Bytes, soap_server::SoapFault>(Bytes::from_static(
+                    b"<tns:OpBResponse xmlns:tns=\"http://example.com/multi\"/>",
+                ))
+            }),
+        )
+        .build()
+        .expect("multi-service WSDL should build without error");
     let server = TestServer::new(svc.into_router());
     Sut { server }
 }

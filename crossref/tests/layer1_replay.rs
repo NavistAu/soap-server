@@ -7,7 +7,8 @@ use crossref::normalize::normalize;
 use crossref::scenario::Scenario;
 use crossref::snapshot::SnapshotStore;
 use crossref::sut::{
-    build_controlled_sut, build_controlled_sut_authed, build_controlled_sut_authed_strict, Sut,
+    build_controlled_sut, build_controlled_sut_authed, build_controlled_sut_authed_strict,
+    build_multi_service_sut, Sut,
 };
 use std::path::PathBuf;
 
@@ -31,12 +32,15 @@ fn load_scenarios() -> Vec<Scenario> {
 /// Select the correct SUT for a given scenario based on naming conventions.
 /// - Scenarios named "wssec_stale*" use the strict-tolerance authed SUT.
 /// - Scenarios named "wssec_*" (other) use the lenient authed SUT.
+/// - Scenarios named "wsdl_rewrite_multi*" use the multi-service SUT.
 /// - All other scenarios use the unauthenticated controlled SUT.
 fn select_sut(scenario_name: &str) -> Sut {
     if scenario_name.starts_with("wssec_stale") {
         build_controlled_sut_authed_strict()
     } else if scenario_name.starts_with("wssec_") {
         build_controlled_sut_authed()
+    } else if scenario_name.starts_with("wsdl_rewrite_multi") {
+        build_multi_service_sut()
     } else {
         build_controlled_sut()
     }

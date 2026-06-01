@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<wsdl:definitions targetNamespace="http://crossref.example/controlled" xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap12/" xmlns:tns="http://crossref.example/controlled" xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <wsdl:types>
+    <xs:schema elementFormDefault="qualified" targetNamespace="http://crossref.example/controlled">
+      <xs:element name="Echo">
+        <xs:complexType><xs:sequence>
+          <xs:element minOccurs="1" name="Text" type="xs:string"/>
+        </xs:sequence></xs:complexType>
+      </xs:element>
+      <xs:element name="EchoResponse">
+        <xs:complexType><xs:sequence>
+          <xs:element minOccurs="1" name="Text" type="xs:string"/>
+        </xs:sequence></xs:complexType>
+      </xs:element>
+
+      <!-- Named complexType for EchoNamed operation (Group C: named-type validation) -->
+      <xs:complexType name="EchoNamedInputType">
+        <xs:sequence>
+          <xs:element minOccurs="1" name="Value" type="xs:string"/>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:element name="EchoNamed" type="tns:EchoNamedInputType"/>
+      <xs:element name="EchoNamedResponse">
+        <xs:complexType><xs:sequence>
+          <xs:element minOccurs="1" name="Value" type="xs:string"/>
+        </xs:sequence></xs:complexType>
+      </xs:element>
+    </xs:schema>
+  </wsdl:types>
+
+  <wsdl:message name="EchoRequest"><wsdl:part element="tns:Echo" name="parameters"/></wsdl:message>
+  <wsdl:message name="EchoResponse"><wsdl:part element="tns:EchoResponse" name="parameters"/></wsdl:message>
+  <wsdl:message name="EchoNamedRequest"><wsdl:part element="tns:EchoNamed" name="parameters"/></wsdl:message>
+  <wsdl:message name="EchoNamedResponse"><wsdl:part element="tns:EchoNamedResponse" name="parameters"/></wsdl:message>
+
+  <wsdl:portType name="ControlledPort">
+    <wsdl:operation name="Echo">
+      <wsdl:input message="tns:EchoRequest"/>
+      <wsdl:output message="tns:EchoResponse"/>
+    </wsdl:operation>
+    <wsdl:operation name="EchoNamed">
+      <wsdl:input message="tns:EchoNamedRequest"/>
+      <wsdl:output message="tns:EchoNamedResponse"/>
+    </wsdl:operation>
+  </wsdl:portType>
+
+  <wsdl:binding name="ControlledBinding" type="tns:ControlledPort">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <wsdl:operation name="Echo">
+      <soap:operation soapAction="http://crossref.example/controlled/Echo"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="EchoNamed">
+      <soap:operation soapAction="http://crossref.example/controlled/EchoNamed"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+  </wsdl:binding>
+
+  <wsdl:service name="ControlledService">
+    <wsdl:port binding="tns:ControlledBinding" name="ControlledPort">
+      <soap:address location="http://localhost/soap"/>
+    </wsdl:port>
+  </wsdl:service>
+</wsdl:definitions>
