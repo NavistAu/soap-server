@@ -46,14 +46,13 @@ impl Sut {
 }
 
 /// Extract the text content of the first element whose local name ends with "Text".
-fn extract_text(body: &[u8]) -> String {
+fn extract_text(body: &[u8]) -> Option<String> {
     use quick_xml::events::Event;
     use quick_xml::Reader;
 
     let mut reader = Reader::from_reader(body);
     reader.config_mut().trim_text(true);
     let mut in_text = false;
-    let mut result = String::new();
     loop {
         match reader.read_event() {
             Ok(Event::Start(e)) => {
@@ -64,21 +63,19 @@ fn extract_text(body: &[u8]) -> String {
                 }
             }
             Ok(Event::Text(t)) if in_text => {
-                result = t.decode().unwrap_or_default().into_owned();
-                break;
+                return Some(t.decode().unwrap_or_default().into_owned());
             }
-            Ok(Event::End(_)) if in_text => break,
-            Ok(Event::Eof) => break,
-            Err(_) => break,
+            Ok(Event::End(_)) if in_text => return None,
+            Ok(Event::Eof) => return None,
+            Err(_) => return None,
             _ => {}
         }
     }
-    result
 }
 
 fn echo_handler() -> impl soap_server::SoapHandler {
     FnHandler::new(|body: Bytes| async move {
-        let text = extract_text(&body);
+        let text = extract_text(&body).unwrap_or_default();
         let escaped = soap_server::escape_text(&text);
         let resp = format!(
             r#"<c:EchoResponse xmlns:c="http://crossref.example/controlled"><c:Text>{escaped}</c:Text></c:EchoResponse>"#
