@@ -35,6 +35,9 @@ fn load_scenarios() -> Vec<Scenario> {
 /// - Scenarios named "wsdl_rewrite_multi*" use the multi-service SUT.
 /// - All other scenarios use the unauthenticated controlled SUT.
 fn select_sut(scenario_name: &str) -> Sut {
+    // `wssec_stale` MUST be checked before `wssec_`: it is a strict sub-prefix, so
+    // reversing these branches would silently route stale-timestamp scenarios to the
+    // lenient SUT and make wssec_stale_timestamp pass when it must fail.
     if scenario_name.starts_with("wssec_stale") {
         build_controlled_sut_authed_strict()
     } else if scenario_name.starts_with("wssec_") {

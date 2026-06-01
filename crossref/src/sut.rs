@@ -63,32 +63,40 @@ impl Sut {
     }
 }
 
-/// Extract the text content of the first element whose local name ends with "Text".
-fn extract_text(body: &[u8]) -> Option<String> {
+/// Extract the text content of the first element whose local name ends with `suffix`.
+fn extract_first_text_by_suffix(body: &[u8], suffix: &str) -> Option<String> {
     use quick_xml::events::Event;
     use quick_xml::Reader;
 
     let mut reader = Reader::from_reader(body);
     reader.config_mut().trim_text(true);
-    let mut in_text = false;
+    let mut in_target = false;
     loop {
         match reader.read_event() {
             Ok(Event::Start(e)) => {
                 let local = e.local_name();
                 let local_str = std::str::from_utf8(local.as_ref()).unwrap_or("");
-                if local_str.ends_with("Text") {
-                    in_text = true;
+                if local_str.ends_with(suffix) {
+                    in_target = true;
                 }
             }
-            Ok(Event::Text(t)) if in_text => {
+            Ok(Event::Text(t)) if in_target => {
                 return Some(t.decode().unwrap_or_default().into_owned());
             }
-            Ok(Event::End(_)) if in_text => return None,
+            Ok(Event::End(_)) if in_target => return None,
             Ok(Event::Eof) => return None,
             Err(_) => return None,
             _ => {}
         }
     }
+}
+
+fn extract_text(body: &[u8]) -> Option<String> {
+    extract_first_text_by_suffix(body, "Text")
+}
+
+fn extract_value(body: &[u8]) -> Option<String> {
+    extract_first_text_by_suffix(body, "Value")
 }
 
 fn echo_handler() -> impl soap_server::SoapHandler {
@@ -102,34 +110,6 @@ fn echo_handler() -> impl soap_server::SoapHandler {
     })
 }
 
-/// Extract the text content of the first element whose local name ends with "Value".
-fn extract_value(body: &[u8]) -> Option<String> {
-    use quick_xml::events::Event;
-    use quick_xml::Reader;
-
-    let mut reader = Reader::from_reader(body);
-    reader.config_mut().trim_text(true);
-    let mut in_value = false;
-    loop {
-        match reader.read_event() {
-            Ok(Event::Start(e)) => {
-                let local = e.local_name();
-                let local_str = std::str::from_utf8(local.as_ref()).unwrap_or("");
-                if local_str.ends_with("Value") {
-                    in_value = true;
-                }
-            }
-            Ok(Event::Text(t)) if in_value => {
-                return Some(t.decode().unwrap_or_default().into_owned());
-            }
-            Ok(Event::End(_)) if in_value => return None,
-            Ok(Event::Eof) => return None,
-            Err(_) => return None,
-            _ => {}
-        }
-    }
-}
-
 fn echo_named_handler() -> impl soap_server::SoapHandler {
     FnHandler::new(|body: Bytes| async move {
         let value = extract_value(&body).unwrap_or_default();
@@ -141,11 +121,18 @@ fn echo_named_handler() -> impl soap_server::SoapHandler {
     })
 }
 
-pub fn build_controlled_sut() -> Sut {
-    let svc = ServerBuilder::from_wsdl_bytes(CONTROLLED_WSDL.to_vec())
+/// Return a `ServerBuilder` pre-loaded with the controlled WSDL, path, and both
+/// standard handlers. All three `build_controlled_sut*` variants start from this
+/// base and add auth / tolerance on top.
+fn controlled_base() -> ServerBuilder {
+    ServerBuilder::from_wsdl_bytes(CONTROLLED_WSDL.to_vec())
         .path("/soap")
         .handler("Echo", echo_handler())
         .handler("EchoNamed", echo_named_handler())
+}
+
+pub fn build_controlled_sut() -> Sut {
+    let svc = controlled_base()
         .build()
         .expect("controlled WSDL should build without error");
     let server = TestServer::new(svc.into_router());
@@ -156,10 +143,7 @@ pub fn build_controlled_sut() -> Sut {
 /// so that static request fixtures with a fixed Created timestamp never expire.
 /// Used for wssec_digest_success, wssec_bad_password, and wssec_missing_auth scenarios.
 pub fn build_controlled_sut_authed() -> Sut {
-    let svc = ServerBuilder::from_wsdl_bytes(CONTROLLED_WSDL.to_vec())
-        .path("/soap")
-        .handler("Echo", echo_handler())
-        .handler("EchoNamed", echo_named_handler())
+    let svc = controlled_base()
         .auth(|user| (user == "alice").then(|| "secret".to_string()))
         // ~100 years in seconds so fixed Created never goes stale
         .timestamp_tolerance_secs(3_153_600_000)
@@ -173,10 +157,7 @@ pub fn build_controlled_sut_authed() -> Sut {
 /// Used for wssec_stale_timestamp — the fixed Created "2000-01-01T00:00:00.000Z"
 /// is decades in the past and must be rejected.
 pub fn build_controlled_sut_authed_strict() -> Sut {
-    let svc = ServerBuilder::from_wsdl_bytes(CONTROLLED_WSDL.to_vec())
-        .path("/soap")
-        .handler("Echo", echo_handler())
-        .handler("EchoNamed", echo_named_handler())
+    let svc = controlled_base()
         .auth(|user| (user == "alice").then(|| "secret".to_string()))
         .timestamp_tolerance_secs(300)
         .build()
@@ -249,6 +230,6 @@ mod tests {
             .await;
         assert_eq!(resp.status, 500);
         assert!(resp.body_utf8().contains("Fault"));
-        assert!(resp.body_utf8().contains("Value"));
+        assert!(resp.body_utf8().contains("required element"));
     }
 }
