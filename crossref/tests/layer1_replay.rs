@@ -104,7 +104,8 @@ async fn wssec_replay() {
     // First request: must succeed.
     let resp1 = sut.replay("/soap", request, ct).await;
     assert_eq!(
-        resp1.status, 200,
+        resp1.status,
+        200,
         "First wssec request should succeed: {}",
         resp1.body_utf8()
     );
@@ -112,7 +113,8 @@ async fn wssec_replay() {
     // Second request with SAME nonce: must be rejected as replay.
     let resp2 = sut.replay("/soap", request, ct).await;
     assert_eq!(
-        resp2.status, 500,
+        resp2.status,
+        500,
         "Second wssec request with same nonce should be rejected as replay: {}",
         resp2.body_utf8()
     );
