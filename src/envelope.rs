@@ -107,14 +107,20 @@ pub fn parse_envelope(input: &[u8]) -> Result<ParsedEnvelope, SoapFault> {
                 let is_soap_ns = ns_bytes == SOAP12_NS || ns_bytes == SOAP11_NS;
 
                 if is_soap_ns && local.as_ref() == b"Header" {
-                    // Collect all Header children
-                    header_children = collect_header_children(&mut reader, &envelope_ns_bindings)?;
+                    // Accumulate namespaces declared on the Header element itself
+                    let mut header_ns_bindings = envelope_ns_bindings.clone();
+                    collect_ns_from_attrs(&e, &mut header_ns_bindings);
+                    // Collect all Header children, passing all in-scope ns bindings
+                    header_children = collect_header_children(&mut reader, &header_ns_bindings)?;
                 } else if is_soap_ns && local.as_ref() == b"Body" {
                     found_body = true;
-                    // Extract first child of Body
+                    // Accumulate namespaces declared on the Body element itself
+                    let mut body_ns_bindings = envelope_ns_bindings.clone();
+                    collect_ns_from_attrs(&e, &mut body_ns_bindings);
+                    // Extract first child of Body, passing all in-scope ns bindings
                     body_element = Some(extract_body_first_child(
                         &mut reader,
-                        &envelope_ns_bindings,
+                        &body_ns_bindings,
                         &soap_version,
                     )?);
                     // Skip until Body end
@@ -140,6 +146,41 @@ pub fn parse_envelope(input: &[u8]) -> Result<ParsedEnvelope, SoapFault> {
         header_children,
         body_element,
     })
+}
+
+/// Collect namespace declarations (xmlns:prefix="uri" or xmlns="uri") from a start element's
+/// attributes and append them to `bindings`.  Existing entries are NOT removed — later
+/// declarations for the same prefix will just shadow earlier ones when we emit them.  Because
+/// we emit only the first binding we find for each prefix (own-element attrs come after
+/// ancestor ones in the Vec), we must push *before* existing entries so they take precedence.
+/// We use a prepend strategy: insert at the front so the caller's dedup logic (which skips
+/// prefixes already declared by the element's own attrs) sees element-own decls first.
+fn collect_ns_from_attrs(
+    e: &quick_xml::events::BytesStart<'_>,
+    bindings: &mut Vec<(String, String)>,
+) {
+    // Collect new bindings from this element's attributes.
+    let mut new_bindings: Vec<(String, String)> = Vec::new();
+    for attr in e.attributes().flatten() {
+        let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
+        if key.starts_with("xmlns:") {
+            let prefix = key.trim_start_matches("xmlns:").to_string();
+            let value = std::str::from_utf8(attr.value.as_ref())
+                .unwrap_or("")
+                .to_string();
+            new_bindings.push((prefix, value));
+        } else if key == "xmlns" {
+            let value = std::str::from_utf8(attr.value.as_ref())
+                .unwrap_or("")
+                .to_string();
+            new_bindings.push((String::new(), value));
+        }
+    }
+    // Prepend new bindings so they shadow inherited ones with the same prefix.
+    // (The emit helper checks `own_attr_keys` to avoid re-emitting, so order matters.)
+    let mut merged = new_bindings;
+    merged.append(bindings);
+    *bindings = merged;
 }
 
 fn collect_header_children(
@@ -221,12 +262,40 @@ fn collect_header_children(
             }
             (_, Event::Empty(e)) => {
                 if depth == 0 {
-                    // Self-closing child element
+                    // Self-closing child element — re-emit inherited ns bindings (same as Start case).
                     current_buf.clear();
                     current_buf.extend_from_slice(b"<");
                     current_buf.extend_from_slice(e.name().as_ref());
-                    for attr in e.attributes() {
-                        let attr = attr.map_err(|_| SoapFault::sender("Invalid attribute"))?;
+
+                    let mut own_attr_keys: std::collections::HashSet<String> =
+                        std::collections::HashSet::new();
+                    let own_attrs: Vec<_> = e.attributes().filter_map(|a| a.ok()).collect();
+                    for attr in &own_attrs {
+                        own_attr_keys.insert(
+                            std::str::from_utf8(attr.key.as_ref())
+                                .unwrap_or("")
+                                .to_string(),
+                        );
+                    }
+
+                    // Emit inherited namespace bindings first (skip if already declared).
+                    for (prefix, uri) in ns_bindings {
+                        let key = if prefix.is_empty() {
+                            "xmlns".to_string()
+                        } else {
+                            format!("xmlns:{prefix}")
+                        };
+                        if !own_attr_keys.contains(&key) {
+                            current_buf.extend_from_slice(b" ");
+                            current_buf.extend_from_slice(key.as_bytes());
+                            current_buf.extend_from_slice(b"=\"");
+                            current_buf.extend_from_slice(uri.as_bytes());
+                            current_buf.extend_from_slice(b"\"");
+                        }
+                    }
+
+                    // Emit element's own attributes.
+                    for attr in &own_attrs {
                         current_buf.extend_from_slice(b" ");
                         current_buf.extend_from_slice(attr.key.as_ref());
                         current_buf.extend_from_slice(b"=\"");
@@ -686,6 +755,102 @@ mod tests {
         assert_eq!(
             response_content_type(&SoapVersion::Soap12),
             "application/soap+xml; charset=utf-8"
+        );
+    }
+
+    // ── Finding #2 regression tests: namespace declared on Body/Header/operation element ──
+
+    /// xmlns:tds declared on env:Body (not Envelope) must be re-emitted on the extracted fragment.
+    #[test]
+    fn namespace_declared_on_body_is_preserved_in_body_element() {
+        let xml = r#"<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope">
+  <env:Body xmlns:tds="http://www.onvif.org/ver10/device/wsdl">
+    <tds:GetSystemDateAndTime/>
+  </env:Body>
+</env:Envelope>"#;
+        let parsed = parse_envelope(xml.as_bytes()).unwrap();
+        let body_str = std::str::from_utf8(&parsed.body_element).unwrap();
+        assert!(
+            body_str.contains("xmlns:tds")
+                && body_str.contains("http://www.onvif.org/ver10/device/wsdl"),
+            "body_element should contain tds namespace declared on Body, got: {body_str}"
+        );
+        assert!(
+            body_str.contains("GetSystemDateAndTime"),
+            "body_element should contain operation element, got: {body_str}"
+        );
+    }
+
+    /// xmlns:wsse declared on the Header child itself (not Envelope) must be preserved.
+    #[test]
+    fn namespace_declared_on_header_child_is_preserved() {
+        let xml = r#"<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope">
+  <env:Header>
+    <wsse:Security xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd">
+      <wsse:UsernameToken><wsse:Username>user</wsse:Username></wsse:UsernameToken>
+    </wsse:Security>
+  </env:Header>
+  <env:Body>
+    <op:Ping xmlns:op="urn:test"/>
+  </env:Body>
+</env:Envelope>"#;
+        let parsed = parse_envelope(xml.as_bytes()).unwrap();
+        assert_eq!(parsed.header_children.len(), 1);
+        let header_str = std::str::from_utf8(&parsed.header_children[0]).unwrap();
+        // The extracted Security fragment must carry wsse namespace
+        assert!(
+            header_str.contains("xmlns:wsse")
+                && header_str.contains("oasis-200401-wss-wssecurity-secext"),
+            "header child must carry wsse namespace declared on it, got: {header_str}"
+        );
+        assert!(
+            header_str.contains("UsernameToken"),
+            "header child must retain content, got: {header_str}"
+        );
+    }
+
+    /// xmlns:tds declared on the operation element itself (not Envelope or Body) must survive.
+    #[test]
+    fn namespace_declared_on_operation_element_is_preserved() {
+        let xml = r#"<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope">
+  <env:Body>
+    <tds:GetCapabilities xmlns:tds="http://www.onvif.org/ver10/device/wsdl">
+      <tds:Category>All</tds:Category>
+    </tds:GetCapabilities>
+  </env:Body>
+</env:Envelope>"#;
+        let parsed = parse_envelope(xml.as_bytes()).unwrap();
+        let body_str = std::str::from_utf8(&parsed.body_element).unwrap();
+        // xmlns:tds was declared on the operation element itself — must be in the fragment
+        assert!(
+            body_str.contains("xmlns:tds")
+                && body_str.contains("http://www.onvif.org/ver10/device/wsdl"),
+            "operation-element xmlns:tds must be present in extracted body fragment, got: {body_str}"
+        );
+        assert!(
+            body_str.contains("GetCapabilities"),
+            "body fragment must contain operation element name, got: {body_str}"
+        );
+    }
+
+    /// Namespace declared on Header element (not Envelope, not child) must be in-scope for children.
+    #[test]
+    fn namespace_declared_on_header_element_propagates_to_children() {
+        // xmlns:wsse on env:Header; child uses wsse: prefix — child fragment must carry it
+        let xml = r#"<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope">
+  <env:Header xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd">
+    <wsse:Security/>
+  </env:Header>
+  <env:Body>
+    <op:Op xmlns:op="urn:test"/>
+  </env:Body>
+</env:Envelope>"#;
+        let parsed = parse_envelope(xml.as_bytes()).unwrap();
+        assert_eq!(parsed.header_children.len(), 1);
+        let header_str = std::str::from_utf8(&parsed.header_children[0]).unwrap();
+        assert!(
+            header_str.contains("xmlns:wsse"),
+            "header child fragment must carry wsse namespace declared on Header element, got: {header_str}"
         );
     }
 }

@@ -8,7 +8,7 @@ use axum::{
     extract::{DefaultBodyLimit, MatchedPath, Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::post,
     Router,
 };
 use bytes::Bytes;
@@ -23,7 +23,9 @@ use crate::fault::SoapFault;
 use crate::handler::SoapHandler;
 use crate::qname::QName;
 use crate::wsdl::definitions::SoapVersion;
-use crate::wsdl::resolver::{resolve_wsdl, rewrite_wsdl_address, WsdlLoader};
+use crate::wsdl::resolver::{
+    resolve_wsdl, rewrite_wsdl_address, rewrite_wsdl_address_for_service, WsdlLoader,
+};
 use crate::wssec::{nonce_cache::RotatingNonceCache, username_token::validate_username_token};
 use crate::xsd::types::TypeRegistry;
 
@@ -197,11 +199,12 @@ impl ServerBuilder {
         let service_names: Vec<String> = resolved.definition.services.keys().cloned().collect();
         let is_multi_service = service_names.len() > 1;
 
-        let (dispatch_table, service_tables) = if is_multi_service {
+        let (dispatch_table, service_tables, service_path_names) = if is_multi_service {
             // Multi-service mode: build one table per service, mount at per-service path.
             // The handlers HashMap is shared across services — each service only uses the
             // handlers for operations it owns. We clone handlers for each service.
             let mut service_tables: HashMap<String, Arc<DispatchTable>> = HashMap::new();
+            let mut service_path_names: HashMap<String, String> = HashMap::new();
             let mut all_ops_in_all_services: HashSet<String> = HashSet::new();
 
             // First pass: collect which ops belong to each service.
@@ -266,6 +269,11 @@ impl ServerBuilder {
                         BuildError::UnregisteredOperation(op)
                     }
                     DispatchError::UnknownOperation(op) => BuildError::UnknownOperation(op),
+                    DispatchError::UnresolvableInputType { op, element, type_ref } => {
+                        BuildError::WsdlParse(format!(
+                            "Operation '{op}' input element '{element}' references unresolvable type '{type_ref}'"
+                        ))
+                    }
                 })?;
 
                 // Derive the route path from the first port's address.
@@ -275,6 +283,7 @@ impl ServerBuilder {
                     .map(|p| extract_path_from_url(&p.address))
                     .unwrap_or_else(|| format!("/{}", svc_name.to_lowercase()));
 
+                service_path_names.insert(path.clone(), svc_name.clone());
                 service_tables.insert(path, Arc::new(table));
             }
 
@@ -287,7 +296,7 @@ impl ServerBuilder {
                 .cloned()
                 .unwrap_or_else(|| Arc::new(DispatchTable::empty()));
 
-            (first_table, service_tables)
+            (first_table, service_tables, service_path_names)
         } else {
             // Single-service mode: build one dispatch table, no per-service tables.
             let table = dispatch::build_dispatch_table(
@@ -299,8 +308,13 @@ impl ServerBuilder {
             .map_err(|e| match e {
                 DispatchError::UnregisteredOperation(op) => BuildError::UnregisteredOperation(op),
                 DispatchError::UnknownOperation(op) => BuildError::UnknownOperation(op),
+                DispatchError::UnresolvableInputType { op, element, type_ref } => {
+                    BuildError::WsdlParse(format!(
+                        "Operation '{op}' input element '{element}' references unresolvable type '{type_ref}'"
+                    ))
+                }
             })?;
-            (Arc::new(table), HashMap::new())
+            (Arc::new(table), HashMap::new(), HashMap::new())
         };
 
         let type_registry = Arc::new(resolved.type_registry);
@@ -308,6 +322,7 @@ impl ServerBuilder {
         Ok(SoapService {
             dispatch_table,
             service_tables,
+            service_path_names,
             type_registry,
             wsdl_raw: Arc::new(wsdl_bytes),
             auth_fn: self.auth_fn,
@@ -416,6 +431,9 @@ pub struct SoapService {
     /// Non-empty when the WSDL has multiple services (multi-service mode).
     /// Empty in single-service mode (backward-compat).
     service_tables: HashMap<String, Arc<DispatchTable>>,
+    /// Maps route path → WSDL service name (for per-service WSDL address rewriting).
+    /// Non-empty only in multi-service mode.
+    service_path_names: HashMap<String, String>,
     type_registry: Arc<TypeRegistry>,
     wsdl_raw: Arc<Vec<u8>>,
     auth_fn: AuthFn,
@@ -445,17 +463,32 @@ impl SoapService {
             // Multi-service mode: each service gets its own POST + GET (?wsdl) route.
             let state = Arc::new(self);
             let mut router = Router::new();
-            for (path, table) in &state.service_tables {
+            // Collect (path, table, service_name) triples before entering the loop to
+            // avoid holding immutable borrows on `state` while we call `state.clone()`.
+            let routes: Vec<(String, Arc<DispatchTable>, String)> = state
+                .service_tables
+                .iter()
+                .map(|(path, table)| {
+                    let svc_name = state
+                        .service_path_names
+                        .get(path)
+                        .cloned()
+                        .unwrap_or_default();
+                    (path.clone(), table.clone(), svc_name)
+                })
+                .collect();
+            for (path, table, service_name) in routes {
                 let route_state = SoapServiceRoute {
                     svc: state.clone(),
-                    table: table.clone(),
+                    table,
+                    service_name,
                 };
                 router = router.route(
-                    path,
-                    post(soap_post_handler_for_route).with_state(route_state),
+                    &path,
+                    post(soap_post_handler_for_route)
+                        .get(wsdl_get_handler_for_route)
+                        .with_state(route_state),
                 );
-                // Register GET ?wsdl handler with the shared Arc<SoapService> state.
-                router = router.route(path, get(wsdl_get_handler).with_state(state.clone()));
             }
             router.layer(DefaultBodyLimit::max(max_body))
         } else {
@@ -475,6 +508,8 @@ impl SoapService {
 struct SoapServiceRoute {
     svc: Arc<SoapService>,
     table: Arc<DispatchTable>,
+    /// The WSDL service name this route belongs to (used for per-service WSDL address rewriting).
+    service_name: String,
 }
 
 // ── Helper: return a 500 SOAP fault response ──────────────────────────────────
@@ -649,7 +684,7 @@ async fn soap_post_handler(
     if let Err(fault) = dispatch::validate_request(
         &envelope.body_element,
         &svc.type_registry,
-        entry.input_type.as_ref(),
+        entry.validation_type.as_ref(),
     ) {
         return fault_response(fault, envelope.soap_version.clone());
     }
@@ -761,7 +796,7 @@ async fn soap_post_handler_for_route(
     if let Err(fault) = dispatch::validate_request(
         &envelope.body_element,
         &svc.type_registry,
-        entry.input_type.as_ref(),
+        entry.validation_type.as_ref(),
     ) {
         return fault_response(fault, envelope.soap_version.clone());
     }
@@ -822,6 +857,49 @@ async fn wsdl_get_handler(
     let server_url = format!("http://{host}{path}");
 
     let rewritten = rewrite_wsdl_address(&svc.wsdl_raw, &server_url);
+
+    (
+        StatusCode::OK,
+        [("Content-Type", "text/xml; charset=utf-8")],
+        rewritten,
+    )
+        .into_response()
+}
+
+// ── axum handler: GET /soap?wsdl (per-service route in multi-service mode) ───
+
+async fn wsdl_get_handler_for_route(
+    matched_path: Option<MatchedPath>,
+    State(route_state): State<SoapServiceRoute>,
+    Query(params): Query<WsdlQuery>,
+    headers: HeaderMap,
+) -> Response {
+    // Only respond when ?wsdl query parameter is present.
+    if params.wsdl.is_none() {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+
+    let svc = &route_state.svc;
+
+    // Build the server URL from Host header (or X-Forwarded-Host).
+    let host = headers
+        .get("x-forwarded-host")
+        .or_else(|| headers.get("host"))
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("localhost");
+
+    let path = matched_path
+        .as_ref()
+        .map(|mp| mp.as_str())
+        .unwrap_or(&svc.mount_path);
+
+    let server_url = format!("http://{host}{path}");
+
+    // In multi-service mode, rewrite ONLY the address for the matched service/port.
+    // Other services' addresses are preserved so that generated clients bind each service
+    // to its own endpoint rather than all to the current request path.
+    let rewritten =
+        rewrite_wsdl_address_for_service(&svc.wsdl_raw, &server_url, &route_state.service_name);
 
     (
         StatusCode::OK,

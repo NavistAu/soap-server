@@ -15,8 +15,16 @@ pub struct DispatchEntry {
     pub handler: Arc<dyn SoapHandler>,
     /// Whether this operation requires authentication (controlled by auth_bypass set at startup).
     pub auth_required: bool,
-    /// QName of the operation's input type in the TypeRegistry (for XSD-11 validation).
+    /// QName used for routing (body first-child element QName for document/literal,
+    /// synthesized wrapper QName for RPC).  This is the key used for dispatch lookup.
     pub input_type: Option<QName>,
+    /// QName to look up in the TypeRegistry for structural XSD validation.
+    ///
+    /// For RPC style or inline-element ops, this equals `input_type`.
+    /// For document/literal ops whose message-part element has a named `type=` attribute,
+    /// this is the named type QName rather than the element QName.
+    /// `None` means genuinely no schema is expected (empty/omitted input) — validation passes.
+    pub validation_type: Option<QName>,
 }
 
 impl std::fmt::Debug for DispatchEntry {
@@ -24,6 +32,7 @@ impl std::fmt::Debug for DispatchEntry {
         f.debug_struct("DispatchEntry")
             .field("auth_required", &self.auth_required)
             .field("input_type", &self.input_type)
+            .field("validation_type", &self.validation_type)
             .finish_non_exhaustive()
     }
 }
@@ -56,6 +65,15 @@ pub enum DispatchError {
     UnregisteredOperation(String),
     #[error("Registered handler '{0}' has no matching operation in WSDL")]
     UnknownOperation(String),
+    /// The operation references schema information (element/type) that is declared in the
+    /// loaded schema but cannot be resolved to a concrete type at build time.
+    /// Fail-closed: surfacing this at startup prevents silent skip of required validation.
+    #[error("Operation '{op}' input element '{element}' references type '{type_ref}' which is not in the type registry")]
+    UnresolvableInputType {
+        op: String,
+        element: String,
+        type_ref: String,
+    },
 }
 
 /// Build the dispatch table at startup.
@@ -199,27 +217,65 @@ fn build_dispatch_table_from_ops(
 
         let auth_required = !auth_bypass.contains(&op_name);
 
-        // Determine the input dispatch QName.
+        // Determine the input dispatch QName and validation type QName.
+        //
         // RPC style: synthesize QName from (soap:body namespace or targetNamespace, operation name).
-        // Document style: resolve from message part element reference.
-        let input_type = if style == BindingStyle::Rpc {
+        //   validation_type == input_type (registry has been populated for RPC types)
+        //
+        // Document/literal style: resolve from message part element reference.
+        //   input_type = element QName (used for routing)
+        //   validation_type = resolved via element_type_map:
+        //     - element has inline complexType → element QName (now registered in TypeRegistry)
+        //     - element has type= reference → named type QName
+        //     - element not in element_type_map (genuinely no schema) → None (skip validation)
+        //     - element in map but type not in registry → fail-closed build error
+        let (input_type, validation_type) = if style == BindingStyle::Rpc {
             let ns = rpc_ns
                 .as_deref()
                 .unwrap_or(&resolved.definition.target_namespace);
-            Some(QName::new(ns, &op_name))
+            let qn = Some(QName::new(ns, &op_name));
+            (qn.clone(), qn)
         } else {
-            resolve_input_element(resolved, &op_name)
+            let elem_qname = resolve_input_element(resolved, &op_name);
+            let val_type = match &elem_qname {
+                None => None, // No element reference in WSDL — no schema expected.
+                Some(elem_qn) => {
+                    match resolved.element_type_map.get(elem_qn) {
+                        None => {
+                            // Element QName is not in the element_type_map: either the element is
+                            // declared in the schema with no type (empty/any — skip validation),
+                            // or the element is not in the schema at all (external type — skip).
+                            None
+                        }
+                        Some(type_qn) => {
+                            // Element is in the schema and maps to a type.
+                            // Fail-closed: if the type is not resolvable at this point, error.
+                            if resolved.type_registry.lookup(type_qn).is_none() {
+                                return Err(DispatchError::UnresolvableInputType {
+                                    op: op_name.clone(),
+                                    element: elem_qn.to_string(),
+                                    type_ref: type_qn.to_string(),
+                                });
+                            }
+                            Some(type_qn.clone())
+                        }
+                    }
+                }
+            };
+            (elem_qname, val_type)
         };
 
         let entry_for_element = DispatchEntry {
             handler: handler.clone(),
             auth_required,
             input_type: input_type.clone(),
+            validation_type: validation_type.clone(),
         };
         let entry_for_action = DispatchEntry {
             handler,
             auth_required,
             input_type,
+            validation_type,
         };
 
         // Index by input element QName.
@@ -568,6 +624,7 @@ mod tests {
         ResolvedWsdl {
             definition,
             type_registry: TypeRegistry::new(),
+            element_type_map: HashMap::new(),
             raw_bytes: vec![],
         }
     }
@@ -907,6 +964,7 @@ mod tests {
         ResolvedWsdl {
             definition,
             type_registry: crate::xsd::types::TypeRegistry::new(),
+            element_type_map: HashMap::new(),
             raw_bytes: vec![],
         }
     }
@@ -1066,6 +1124,7 @@ mod tests {
         ResolvedWsdl {
             definition,
             type_registry: crate::xsd::types::TypeRegistry::new(),
+            element_type_map: HashMap::new(),
             raw_bytes: vec![],
         }
     }
@@ -1170,6 +1229,232 @@ mod tests {
         assert!(
             route(&table_a, &op_b_qname, None).is_err(),
             "ServiceA should NOT route OpB"
+        );
+    }
+
+    // ── Finding #3: document/literal element validation tests ────────────────
+
+    /// WSDL with a document/literal operation whose input element has an INLINE complexType
+    /// containing a REQUIRED child element.
+    const INLINE_ELEMENT_WSDL: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://schemas.xmlsoap.org/wsdl/"
+  xmlns:soap12="http://schemas.xmlsoap.org/wsdl/soap12/"
+  xmlns:tns="http://example.com/svc"
+  xmlns:xs="http://www.w3.org/2001/XMLSchema"
+  targetNamespace="http://example.com/svc">
+  <types>
+    <xs:schema targetNamespace="http://example.com/svc" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+      <xs:element name="GetFoo">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="RequiredField" type="xs:string" minOccurs="1"/>
+            <xs:element name="OptionalField" type="xs:string" minOccurs="0"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="GetFooResponse">
+        <xs:complexType><xs:sequence/></xs:complexType>
+      </xs:element>
+    </xs:schema>
+  </types>
+  <message name="GetFooRequest"><part name="parameters" element="tns:GetFoo"/></message>
+  <message name="GetFooResponse"><part name="parameters" element="tns:GetFooResponse"/></message>
+  <portType name="SvcPortType">
+    <operation name="GetFoo">
+      <input message="tns:GetFooRequest"/>
+      <output message="tns:GetFooResponse"/>
+    </operation>
+  </portType>
+  <binding name="SvcBinding" type="tns:SvcPortType">
+    <soap12:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="GetFoo">
+      <soap12:operation soapAction="urn:GetFoo"/>
+      <input><soap12:body use="literal"/></input>
+      <output><soap12:body use="literal"/></output>
+    </operation>
+  </binding>
+  <service name="SvcService">
+    <port name="SvcPort" binding="tns:SvcBinding">
+      <soap12:address location="http://localhost/svc"/>
+    </port>
+  </service>
+</definitions>"#;
+
+    /// WSDL with a document/literal operation whose input element uses a named type reference.
+    const NAMED_TYPE_REF_WSDL: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://schemas.xmlsoap.org/wsdl/"
+  xmlns:soap12="http://schemas.xmlsoap.org/wsdl/soap12/"
+  xmlns:tns="http://example.com/svc"
+  xmlns:xs="http://www.w3.org/2001/XMLSchema"
+  targetNamespace="http://example.com/svc">
+  <types>
+    <xs:schema targetNamespace="http://example.com/svc" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+      <xs:complexType name="GetBarType">
+        <xs:sequence>
+          <xs:element name="BarRequired" type="xs:string" minOccurs="1"/>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:element name="GetBar" type="tns:GetBarType"/>
+      <xs:element name="GetBarResponse">
+        <xs:complexType><xs:sequence/></xs:complexType>
+      </xs:element>
+    </xs:schema>
+  </types>
+  <message name="GetBarRequest"><part name="parameters" element="tns:GetBar"/></message>
+  <message name="GetBarResponse"><part name="parameters" element="tns:GetBarResponse"/></message>
+  <portType name="SvcPortType">
+    <operation name="GetBar">
+      <input message="tns:GetBarRequest"/>
+      <output message="tns:GetBarResponse"/>
+    </operation>
+  </portType>
+  <binding name="SvcBinding" type="tns:SvcPortType">
+    <soap12:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="GetBar">
+      <soap12:operation soapAction="urn:GetBar"/>
+      <input><soap12:body use="literal"/></input>
+      <output><soap12:body use="literal"/></output>
+    </operation>
+  </binding>
+  <service name="SvcService">
+    <port name="SvcPort" binding="tns:SvcBinding">
+      <soap12:address location="http://localhost/svc"/>
+    </port>
+  </service>
+</definitions>"#;
+
+    fn resolve_test_wsdl(wsdl: &str) -> ResolvedWsdl {
+        use crate::wsdl::parser::WsdlError;
+        use crate::wsdl::resolver::{resolve_wsdl, WsdlLoader};
+        struct NullLoader;
+        impl WsdlLoader for NullLoader {
+            fn load(&self, loc: &str) -> Result<Vec<u8>, WsdlError> {
+                Err(WsdlError::MalformedXml(format!("NullLoader: {loc}")))
+            }
+        }
+        let mut visited = HashSet::new();
+        resolve_wsdl(wsdl.as_bytes(), &NullLoader, &mut visited)
+            .expect("WSDL resolution should succeed")
+    }
+
+    /// Document/literal op with inline complexType: request missing required field must be REJECTED.
+    #[test]
+    fn doc_literal_inline_type_missing_required_field_rejected() {
+        let resolved = resolve_test_wsdl(INLINE_ELEMENT_WSDL);
+
+        let elem_qname = QName::new("http://example.com/svc", "GetFoo");
+
+        // The validation_type for GetFoo should now be the element QName itself
+        // (because we register inline element types under element QName in TypeRegistry).
+        assert!(
+            resolved.type_registry.lookup(&elem_qname).is_some(),
+            "Inline element type must be in TypeRegistry after resolve_wsdl"
+        );
+
+        // Build a minimal table and check validation rejects missing required field.
+        let mut handlers = HashMap::new();
+        handlers.insert("GetFoo".to_string(), mock_handler("GetFoo"));
+        let table = build_dispatch_table(&resolved, handlers, &HashSet::new(), None).unwrap();
+
+        let entry = route(&table, &elem_qname, None).unwrap();
+        // validation_type must be set (not None) for validation to work
+        assert!(
+            entry.validation_type.is_some(),
+            "validation_type must be Some for document/literal op with inline type"
+        );
+
+        // Request omitting RequiredField must be rejected
+        let body_missing = br#"<tns:GetFoo xmlns:tns="http://example.com/svc"/>"#;
+        let result = validate_request(
+            body_missing,
+            &resolved.type_registry,
+            entry.validation_type.as_ref(),
+        );
+        assert!(
+            result.is_err(),
+            "Request missing RequiredField must produce a validation error"
+        );
+        let fault = result.unwrap_err();
+        assert_eq!(fault.code, crate::fault::FaultCode::Sender);
+        assert!(
+            fault.reason.contains("RequiredField"),
+            "Fault reason must mention the missing field, got: {}",
+            fault.reason
+        );
+
+        // Request including RequiredField must pass
+        let body_ok = br#"<tns:GetFoo xmlns:tns="http://example.com/svc"><tns:RequiredField>val</tns:RequiredField></tns:GetFoo>"#;
+        let result_ok = validate_request(
+            body_ok,
+            &resolved.type_registry,
+            entry.validation_type.as_ref(),
+        );
+        assert!(
+            result_ok.is_ok(),
+            "Request with RequiredField must pass validation, got: {result_ok:?}"
+        );
+    }
+
+    /// Document/literal op with named type reference: missing required field must also be REJECTED.
+    #[test]
+    fn doc_literal_named_type_ref_missing_required_field_rejected() {
+        let resolved = resolve_test_wsdl(NAMED_TYPE_REF_WSDL);
+
+        let elem_qname = QName::new("http://example.com/svc", "GetBar");
+        let type_qname = QName::new("http://example.com/svc", "GetBarType");
+
+        // The named type must be in registry.
+        assert!(
+            resolved.type_registry.lookup(&type_qname).is_some(),
+            "Named type GetBarType must be in TypeRegistry"
+        );
+
+        // Build table — element_type_map for GetBar should point to GetBarType.
+        let mut handlers = HashMap::new();
+        handlers.insert("GetBar".to_string(), mock_handler("GetBar"));
+        let table = build_dispatch_table(&resolved, handlers, &HashSet::new(), None).unwrap();
+
+        let entry = route(&table, &elem_qname, None).unwrap();
+        assert!(
+            entry.validation_type.is_some(),
+            "validation_type must be Some for document/literal op with named type ref"
+        );
+        // validation_type should be GetBarType, not GetBar
+        assert_eq!(
+            entry.validation_type.as_ref().unwrap(),
+            &type_qname,
+            "validation_type must be the named type QName, not the element QName"
+        );
+
+        // Request omitting BarRequired must be rejected
+        let body_missing = br#"<tns:GetBar xmlns:tns="http://example.com/svc"/>"#;
+        let result = validate_request(
+            body_missing,
+            &resolved.type_registry,
+            entry.validation_type.as_ref(),
+        );
+        assert!(
+            result.is_err(),
+            "Request missing BarRequired must produce a validation error"
+        );
+        let fault = result.unwrap_err();
+        assert_eq!(fault.code, crate::fault::FaultCode::Sender);
+        assert!(
+            fault.reason.contains("BarRequired"),
+            "Fault reason must mention the missing field, got: {}",
+            fault.reason
+        );
+
+        // Request including BarRequired must pass
+        let body_ok = br#"<tns:GetBar xmlns:tns="http://example.com/svc"><tns:BarRequired>val</tns:BarRequired></tns:GetBar>"#;
+        let result_ok = validate_request(
+            body_ok,
+            &resolved.type_registry,
+            entry.validation_type.as_ref(),
+        );
+        assert!(
+            result_ok.is_ok(),
+            "Request with BarRequired must pass validation, got: {result_ok:?}"
         );
     }
 }

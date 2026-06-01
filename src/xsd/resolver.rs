@@ -74,6 +74,36 @@ pub fn resolve_schema(
         registry.insert(qname, XsdType::Complex(Box::new(ct)));
     }
 
+    // Register top-level element declarations that have an inline anonymous complexType.
+    // This makes document/literal element QNames resolvable for structural validation:
+    // an xs:element with an inline xs:complexType is inserted into the registry under the
+    // element's own QName so that validate_request can find it.
+    for (elem_qname, xsd_elem) in &flat.elements {
+        if registry.lookup(elem_qname).is_some() {
+            // Already in registry (e.g., was also declared as a named type) — skip.
+            continue;
+        }
+        if let Some(inline) = &xsd_elem.inline_type {
+            // The inline type may itself reference named types; resolve it using the same
+            // flat map so that extensions/restrictions chain correctly.
+            if let crate::xsd::types::XsdType::Complex(raw_ct) = inline.as_ref() {
+                let mut resolving = HashSet::new();
+                // Use a shared resolved map that already has all named types resolved above.
+                // Build a fresh per-element resolved map to avoid contaminating the main one.
+                let mut elem_resolved: HashMap<QName, ComplexType> = HashMap::new();
+                match resolve_complex_type(raw_ct, &flat, &mut elem_resolved, &mut resolving) {
+                    Ok(ct) => {
+                        registry.insert(elem_qname.clone(), XsdType::Complex(Box::new(ct)));
+                    }
+                    Err(_) => {
+                        // Inline type resolution failed — skip; validation will get None from
+                        // the registry and the caller handles fail-closed logic.
+                    }
+                }
+            }
+        }
+    }
+
     Ok(registry)
 }
 
