@@ -19,7 +19,7 @@ pub enum Outcome {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub enum DetailPolicy {
     /// fault detail must be absent
     Absent,
@@ -107,5 +107,27 @@ mod tests {
         let f = s.fault.unwrap();
         assert_eq!(f.code, "Sender");
         assert_eq!(f.detail_policy, DetailPolicy::Absent);
+    }
+
+    #[test]
+    fn parses_detail_policy_raw_xml_child() {
+        let toml = r#"
+            name = "fault_detail_raw_xml"
+            operation = "Faulty"
+            http_method = "POST"
+            http_path = "/soap"
+            content_type = "application/soap+xml; charset=utf-8"
+            soap_version = "1.2"
+            expected_status = 500
+            outcome = "fault"
+            request_file = "fault_detail_raw_xml.request.xml"
+
+            [fault]
+            code = "Receiver"
+            detail_policy = "raw_xml_child"
+        "#;
+        let s = Scenario::from_toml_str(toml).unwrap();
+        let f = s.fault.unwrap();
+        assert_eq!(f.detail_policy, DetailPolicy::RawXmlChild);
     }
 }
