@@ -1,0 +1,9 @@
+name = "ns_on_header"
+operation = "Echo"
+http_method = "POST"
+http_path = "/soap"
+content_type = "application/soap+xml; charset=utf-8"
+soap_version = "1.2"
+expected_status = 200
+outcome = "success"
+request_file = "ns_on_header.request.xml"

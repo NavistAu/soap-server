@@ -1,0 +1,1 @@
+<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope"><env:Body xmlns:c="http://crossref.example/controlled"><c:Echo><c:Text>ns_on_body</c:Text></c:Echo></env:Body></env:Envelope>

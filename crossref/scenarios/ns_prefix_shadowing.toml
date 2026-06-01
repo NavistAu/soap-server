@@ -1,0 +1,11 @@
+name = "ns_prefix_shadowing"
+operation = "Echo"
+http_method = "POST"
+http_path = "/soap"
+content_type = "application/soap+xml; charset=utf-8"
+soap_version = "1.2"
+# Captures actual behavior: soap-server resolves by URI not prefix string.
+# Status captured at authoring time (regen will capture the actual result).
+expected_status = 200
+outcome = "success"
+request_file = "ns_prefix_shadowing.request.xml"
