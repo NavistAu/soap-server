@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use axum::{
-    extract::{MatchedPath, Query, State},
+    extract::{DefaultBodyLimit, MatchedPath, Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -31,6 +31,8 @@ use crate::xsd::types::TypeRegistry;
 const DEFAULT_NONCE_CACHE_HALF_WINDOW_SECS: u64 = 150;
 /// Default timestamp tolerance in seconds (±300s).
 const DEFAULT_TIMESTAMP_TOLERANCE_SECS: i64 = 300;
+/// Default maximum request body size: 2 MiB.
+const DEFAULT_MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
 
 /// Authentication function type: takes a raw Authorization header value and returns a username if valid.
 type AuthFn = Option<Arc<dyn Fn(&str) -> Option<String> + Send + Sync + 'static>>;
@@ -49,6 +51,7 @@ pub struct ServerBuilder {
     mount_path: String,
     timestamp_tolerance_secs: i64,
     nonce_cache_half_window_secs: u64,
+    max_body_bytes: usize,
 }
 
 impl ServerBuilder {
@@ -64,6 +67,7 @@ impl ServerBuilder {
             mount_path: "/soap".to_string(),
             timestamp_tolerance_secs: DEFAULT_TIMESTAMP_TOLERANCE_SECS,
             nonce_cache_half_window_secs: DEFAULT_NONCE_CACHE_HALF_WINDOW_SECS,
+            max_body_bytes: DEFAULT_MAX_BODY_BYTES,
         }
     }
 
@@ -139,6 +143,15 @@ impl ServerBuilder {
     /// Override the WS-Security timestamp tolerance in seconds (default: 300).
     pub fn timestamp_tolerance_secs(mut self, secs: i64) -> Self {
         self.timestamp_tolerance_secs = secs;
+        self
+    }
+
+    /// Set the maximum allowed request body size in bytes (default: 2 MiB).
+    ///
+    /// Requests whose body exceeds this limit are rejected before XML parsing
+    /// begins, preventing memory exhaustion from oversized payloads.
+    pub fn max_body_bytes(mut self, bytes: usize) -> Self {
+        self.max_body_bytes = bytes;
         self
     }
 
@@ -303,6 +316,7 @@ impl ServerBuilder {
             ))),
             timestamp_tolerance_secs: self.timestamp_tolerance_secs,
             mount_path: self.mount_path,
+            max_body_bytes: self.max_body_bytes,
         })
     }
 }
@@ -408,6 +422,7 @@ pub struct SoapService {
     nonce_cache: Arc<Mutex<RotatingNonceCache>>,
     timestamp_tolerance_secs: i64,
     mount_path: String,
+    max_body_bytes: usize,
 }
 
 impl std::fmt::Debug for SoapService {
@@ -425,6 +440,7 @@ impl SoapService {
     /// In multi-service mode: registers one POST route per service path (from service_tables).
     /// In single-service mode: registers a single POST + GET route at mount_path (backward-compat).
     pub fn into_router(self) -> Router {
+        let max_body = self.max_body_bytes;
         if !self.service_tables.is_empty() {
             // Multi-service mode: each service gets its own POST + GET (?wsdl) route.
             let state = Arc::new(self);
@@ -441,7 +457,7 @@ impl SoapService {
                 // Register GET ?wsdl handler with the shared Arc<SoapService> state.
                 router = router.route(path, get(wsdl_get_handler).with_state(state.clone()));
             }
-            router
+            router.layer(DefaultBodyLimit::max(max_body))
         } else {
             // Single-service mode: single route (backward-compat).
             let mount_path = self.mount_path.clone();
@@ -449,6 +465,7 @@ impl SoapService {
             Router::new()
                 .route(&mount_path, post(soap_post_handler).get(wsdl_get_handler))
                 .with_state(state)
+                .layer(DefaultBodyLimit::max(max_body))
         }
     }
 }
@@ -513,12 +530,37 @@ fn extract_body_qname(body_bytes: &[u8]) -> Result<QName, SoapFault> {
 
 // ── Helper: find the wsse:Security header bytes from header_children ──────────
 
+/// WS-Security namespace URI.
+const WSSE_NS: &str =
+    "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd";
+
+/// Match a header child by WS-Security QName: local name `Security` in the
+/// WS-Security namespace.  A header element whose root tag is merely named
+/// `Security` in a different namespace is NOT selected.
 fn find_security_header(header_children: &[Bytes]) -> Option<&Bytes> {
+    use quick_xml::events::Event;
+    use quick_xml::NsReader;
+
     for child in header_children {
-        // Quick check: does this child contain "Security"?
-        if let Ok(s) = std::str::from_utf8(child) {
-            if s.contains("Security") {
-                return Some(child);
+        let mut reader = NsReader::from_reader(child.as_ref());
+        reader.config_mut().trim_text(true);
+        // We only need the first start/empty event to identify the root element.
+        loop {
+            match reader.read_resolved_event() {
+                Ok((resolved_ns, Event::Start(e))) | Ok((resolved_ns, Event::Empty(e))) => {
+                    let local = e.local_name();
+                    let local_str = std::str::from_utf8(local.as_ref()).unwrap_or("");
+                    if local_str == "Security" {
+                        if let quick_xml::name::ResolveResult::Bound(ns) = resolved_ns {
+                            if std::str::from_utf8(ns.0).unwrap_or("") == WSSE_NS {
+                                return Some(child);
+                            }
+                        }
+                    }
+                    break; // Only examine the root element of each child.
+                }
+                Ok((_, Event::Eof)) | Err(_) => break,
+                _ => {}
             }
         }
     }
@@ -937,5 +979,100 @@ mod tests {
         let qname = extract_body_qname(bytes).unwrap();
         assert_eq!(qname.local_name, "Ping");
         assert_eq!(qname.namespace, None);
+    }
+
+    // ── find_security_header QName tests (Finding #9) ────────────────────────
+
+    #[test]
+    fn find_security_header_matches_wsse_namespace() {
+        let wsse_header = Bytes::from_static(
+            br#"<wsse:Security xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd"><wsse:UsernameToken/></wsse:Security>"#,
+        );
+        let headers = [wsse_header.clone()];
+        let result = find_security_header(&headers);
+        assert!(
+            result.is_some(),
+            "Expected wsse:Security header to be found"
+        );
+        assert_eq!(result.unwrap(), &wsse_header);
+    }
+
+    #[test]
+    fn find_security_header_ignores_non_wsse_security_element() {
+        // A header element named "Security" but in a different namespace must NOT match.
+        let fake_security = Bytes::from_static(
+            br#"<ns:Security xmlns:ns="http://example.com/other">some content</ns:Security>"#,
+        );
+        let headers = [fake_security];
+        let result = find_security_header(&headers);
+        assert!(
+            result.is_none(),
+            "Security element in non-WSSE namespace should NOT be selected"
+        );
+    }
+
+    #[test]
+    fn find_security_header_ignores_element_containing_security_substring() {
+        // An element that merely contains the word "Security" in its text must NOT match.
+        let unrelated = Bytes::from_static(
+            br#"<ns:Header xmlns:ns="http://example.com/other">Security policy here</ns:Header>"#,
+        );
+        let headers = [unrelated];
+        let result = find_security_header(&headers);
+        assert!(
+            result.is_none(),
+            "Header containing 'Security' substring but wrong QName should NOT be selected"
+        );
+    }
+
+    #[test]
+    fn find_security_header_returns_first_valid_wsse_header() {
+        let fake_security = Bytes::from_static(
+            br#"<ns:Security xmlns:ns="http://example.com/other">content</ns:Security>"#,
+        );
+        let real_security = Bytes::from_static(
+            br#"<wsse:Security xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd"/>"#,
+        );
+        let headers = [fake_security, real_security.clone()];
+        let result = find_security_header(&headers);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), &real_security);
+    }
+
+    // ── max_body_bytes builder option (Finding #10) ───────────────────────────
+
+    #[test]
+    fn server_builder_max_body_bytes_sets_field() {
+        // Building with a custom max_body_bytes should succeed and produce a router.
+        let svc = ServerBuilder::from_wsdl_bytes(MINIMAL_WSDL)
+            .handler(
+                "Ping",
+                FnHandler::new(|_body: Bytes| async move {
+                    Ok::<Bytes, SoapFault>(Bytes::from_static(b"<PingResponse/>"))
+                }),
+            )
+            .auth_bypass(["Ping"])
+            .max_body_bytes(512 * 1024) // 512 KiB
+            .build()
+            .expect("build should succeed");
+        // Verify the field is stored correctly.
+        assert_eq!(svc.max_body_bytes, 512 * 1024);
+        // Router construction must not panic.
+        let _router = svc.into_router();
+    }
+
+    #[test]
+    fn server_builder_default_max_body_bytes_is_2mib() {
+        let svc = ServerBuilder::from_wsdl_bytes(MINIMAL_WSDL)
+            .handler(
+                "Ping",
+                FnHandler::new(|_body: Bytes| async move {
+                    Ok::<Bytes, SoapFault>(Bytes::from_static(b"<PingResponse/>"))
+                }),
+            )
+            .auth_bypass(["Ping"])
+            .build()
+            .expect("build should succeed");
+        assert_eq!(svc.max_body_bytes, 2 * 1024 * 1024);
     }
 }

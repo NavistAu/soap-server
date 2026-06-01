@@ -9,6 +9,7 @@ use quick_xml::events::Event;
 use quick_xml::Reader;
 use sha1::{Digest, Sha1};
 use std::collections::HashMap;
+use subtle::ConstantTimeEq;
 
 // WS-Security namespaces
 const WSSE_NS: &str =
@@ -249,8 +250,10 @@ pub fn validate_username_token(
 ) -> Result<String, SoapFault> {
     let token = parse_username_token(security_bytes)?;
 
+    // Normalize unknown-user to the same generic fault as a wrong password so
+    // that callers cannot enumerate valid usernames from the fault reason (Finding #12).
     let stored_password =
-        get_password(&token.username).ok_or_else(|| SoapFault::sender("Unknown user"))?;
+        get_password(&token.username).ok_or_else(|| SoapFault::sender("Authentication failed"))?;
 
     // Verify password
     match token.password_type {
@@ -264,24 +267,38 @@ pub fn validate_username_token(
                 .as_deref()
                 .ok_or_else(|| SoapFault::sender("Missing Created for PasswordDigest"))?;
             let expected = compute_digest(nonce, created, &stored_password)?;
-            if expected != token.password {
+            // Use constant-time comparison to avoid timing side-channels (Finding #9).
+            if expected
+                .as_bytes()
+                .ct_eq(token.password.as_bytes())
+                .unwrap_u8()
+                == 0
+            {
                 return Err(SoapFault::sender("Authentication failed"));
             }
+            // Require freshness for Digest tokens (Created was already required above).
+            let created_dt = parse_created(created)?;
+            check_freshness(now, created_dt, tolerance_secs)?;
         }
         PasswordType::Text => {
+            // Require Created timestamp for PasswordText (Finding #9).
+            let created_str = token
+                .created
+                .as_deref()
+                .ok_or_else(|| SoapFault::sender("Missing Created for PasswordText"))?;
+            let created_dt = parse_created(created_str)?;
+            check_freshness(now, created_dt, tolerance_secs)?;
+
+            // Plain string equality is fine for text passwords; constant-time
+            // comparison would also be acceptable but offers negligible benefit
+            // given that text passwords are inherently weak without TLS.
             if token.password != stored_password {
                 return Err(SoapFault::sender("Authentication failed"));
             }
         }
     }
 
-    // Check timestamp freshness
-    if let Some(created_str) = &token.created {
-        let created_dt = parse_created(created_str)?;
-        check_freshness(now, created_dt, tolerance_secs)?;
-    }
-
-    // Check nonce for replay (for digest tokens)
+    // Check nonce for replay
     if let Some(nonce) = &token.nonce {
         nonce_cache.check_and_insert(nonce)?;
     }
@@ -357,6 +374,17 @@ mod tests {
     }
 
     fn security_xml_text(password: &str) -> Vec<u8> {
+        // Includes a Created timestamp so freshness checks pass.
+        format!(r#"<wsse:Security xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd" xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd">
+  <wsse:UsernameToken>
+    <wsse:Username>admin</wsse:Username>
+    <wsse:Password Type="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordText">{password}</wsse:Password>
+    <wsu:Created>{TEST_CREATED}</wsu:Created>
+  </wsse:UsernameToken>
+</wsse:Security>"#).into_bytes()
+    }
+
+    fn security_xml_text_no_created(password: &str) -> Vec<u8> {
         format!(r#"<wsse:Security xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd">
   <wsse:UsernameToken>
     <wsse:Username>admin</wsse:Username>
@@ -489,8 +517,9 @@ mod tests {
             validate_username_token(xml.as_bytes(), &get_password, &mut cache, 300, test_now());
         assert!(result.is_err());
         let fault = result.unwrap_err();
+        // Unknown user is normalized to the same generic message (Finding #12).
         assert!(
-            fault.reason.contains("Unknown user"),
+            fault.reason.contains("Authentication failed"),
             "got: {}",
             fault.reason
         );
@@ -554,6 +583,83 @@ mod tests {
             fault.reason.contains("Missing UsernameToken"),
             "got: {}",
             fault.reason
+        );
+    }
+
+    // ── Finding #9: PasswordText without Created is rejected ─────────────────
+
+    #[test]
+    fn validate_text_password_without_created_is_rejected() {
+        let xml = security_xml_text_no_created(TEST_PASSWORD);
+        let mut cache = make_nonce_cache();
+        let result = validate_username_token(&xml, &get_password, &mut cache, 300, test_now());
+        assert!(
+            result.is_err(),
+            "PasswordText without Created must be rejected"
+        );
+        let fault = result.unwrap_err();
+        assert!(
+            fault.reason.contains("Missing Created"),
+            "Expected 'Missing Created' fault, got: {}",
+            fault.reason
+        );
+    }
+
+    // ── Finding #9: Digest compare still validates a correct token ────────────
+    // (constant-time path)
+
+    #[test]
+    fn validate_correct_digest_constant_time_path_returns_username() {
+        // Re-run the known-vector test to confirm the constant-time path is correct.
+        let xml = security_xml_digest(TEST_NONCE, TEST_CREATED, TEST_EXPECTED_DIGEST);
+        let mut cache = make_nonce_cache();
+        let result = validate_username_token(&xml, &get_password, &mut cache, 300, test_now());
+        assert_eq!(
+            result.unwrap(),
+            "admin",
+            "Constant-time digest path must succeed"
+        );
+    }
+
+    // ── Finding #12: Unknown user and bad digest produce identical fault reason ─
+
+    #[test]
+    fn unknown_user_and_bad_digest_produce_same_fault_reason() {
+        // Auth failure due to unknown user.
+        let xml_unknown = format!(
+            r#"<wsse:Security xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd" xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd">
+  <wsse:UsernameToken>
+    <wsse:Username>no_such_user</wsse:Username>
+    <wsse:Password Type="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordDigest">{TEST_EXPECTED_DIGEST}</wsse:Password>
+    <wsse:Nonce>{TEST_NONCE}</wsse:Nonce>
+    <wsu:Created>{TEST_CREATED}</wsu:Created>
+  </wsse:UsernameToken>
+</wsse:Security>"#
+        );
+        // Auth failure due to wrong digest (correct user).
+        let bad_digest = compute_digest(TEST_NONCE, TEST_CREATED, "wrongpassword").unwrap();
+        let xml_bad_digest = security_xml_digest(TEST_NONCE, TEST_CREATED, &bad_digest);
+
+        let mut cache1 = make_nonce_cache();
+        let fault_unknown = validate_username_token(
+            xml_unknown.as_bytes(),
+            &get_password,
+            &mut cache1,
+            300,
+            test_now(),
+        )
+        .unwrap_err();
+
+        let mut cache2 = make_nonce_cache();
+        let fault_bad =
+            validate_username_token(&xml_bad_digest, &get_password, &mut cache2, 300, test_now())
+                .unwrap_err();
+
+        assert_eq!(
+            fault_unknown.reason, fault_bad.reason,
+            "Unknown user and bad digest must produce the same public fault reason (Finding #12). \
+             Got unknown={:?} bad_digest={:?}",
+            fault_unknown.reason, fault_bad.reason
         );
     }
 }

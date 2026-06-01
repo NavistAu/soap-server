@@ -1,4 +1,5 @@
 //! SOAP fault types and serialization for SOAP 1.1 and 1.2.
+use crate::xml_escape::escape_text;
 use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -105,9 +106,9 @@ impl SoapFault {
             // DataEncodingUnknown has no SOAP 1.1 equivalent — map to Server per Apache CXF
             FaultCode::DataEncodingUnknown => "SOAP-ENV:Server",
         };
-        let reason = &self.reason;
+        let reason = escape_text(&self.reason);
         let detail_xml = match &self.detail {
-            Some(detail) => format!("<detail>{detail}</detail>"),
+            Some(detail) => format!("<detail>{}</detail>", escape_text(detail)),
             None => String::new(),
         };
         format!(
@@ -119,10 +120,10 @@ impl SoapFault {
     /// HTTP status is always 500 per W3C SOAP 1.2 spec Section 7.4.2 (FLT-03).
     pub fn to_xml_bytes(&self) -> Vec<u8> {
         let code = self.code.as_soap12_str();
-        let reason = &self.reason;
+        let reason = escape_text(&self.reason);
 
         let detail_xml = match &self.detail {
-            Some(detail) => format!("<env:Detail>{detail}</env:Detail>"),
+            Some(detail) => format!("<env:Detail>{}</env:Detail>", escape_text(detail)),
             None => String::new(),
         };
 
@@ -266,11 +267,11 @@ mod tests {
         let fault = SoapFault::new(
             FaultCode::Receiver,
             "Internal error",
-            Some("<extra>info</extra>".to_string()),
+            Some("extra info".to_string()),
         );
         let xml = String::from_utf8(fault.to_xml_bytes()).unwrap();
         assert!(
-            xml.contains("<env:Detail><extra>info</extra></env:Detail>"),
+            xml.contains("<env:Detail>extra info</env:Detail>"),
             "Expected Detail element with content, got: {xml}"
         );
     }
@@ -408,11 +409,11 @@ mod tests {
         let fault = SoapFault::new(
             FaultCode::Receiver,
             "Internal error",
-            Some("<extra>info</extra>".to_string()),
+            Some("extra info".to_string()),
         );
         let xml = String::from_utf8(fault.to_xml_bytes_v11()).unwrap();
         assert!(
-            xml.contains("<detail><extra>info</extra></detail>"),
+            xml.contains("<detail>extra info</detail>"),
             "Expected <detail> element with content, got: {xml}"
         );
     }
@@ -449,5 +450,93 @@ mod tests {
             v11_versioned, v11_direct,
             "Soap11 path should produce identical output to to_xml_bytes_v11()"
         );
+    }
+
+    // ── XML escaping tests (Finding #1) ──────────────────────────────────────
+
+    /// Verify that reason and detail containing all five XML special characters
+    /// (`& < > " '`) are properly escaped and the resulting document parses as
+    /// well-formed XML.  Uses quick_xml to parse the envelope so any unescaped
+    /// entity or unbound prefix would surface as a parse error.
+    #[test]
+    fn soap12_fault_special_chars_in_reason_and_detail_are_escaped() {
+        use quick_xml::events::Event;
+        use quick_xml::Reader;
+
+        let special = r#"& < > " '"#;
+        let fault = SoapFault::new(FaultCode::Sender, special, Some(special.to_string()));
+        let xml_bytes = fault.to_xml_bytes();
+        let xml_str = String::from_utf8(xml_bytes.clone()).unwrap();
+
+        // The raw ampersand must NOT appear unescaped in the output.
+        // We check that the literal "& " (ampersand-space) is absent — the namespace
+        // URI http://... does not contain "& ", so any match is from the dynamic value.
+        assert!(
+            !xml_str.contains("& "),
+            "Unescaped '& ' found in SOAP 1.2 fault XML: {xml_str}"
+        );
+        // The escaped forms must be present.
+        assert!(xml_str.contains("&amp;"), "Expected &amp;: {xml_str}");
+        assert!(xml_str.contains("&lt;"), "Expected &lt;: {xml_str}");
+        assert!(xml_str.contains("&gt;"), "Expected &gt;: {xml_str}");
+        assert!(xml_str.contains("&quot;"), "Expected &quot;: {xml_str}");
+        assert!(xml_str.contains("&apos;"), "Expected &apos;: {xml_str}");
+
+        // Parse with quick_xml to confirm the document is well-formed XML.
+        // Any unescaped `<` or bare `&` would cause a parse error here (the
+        // expect() would panic with an XML error rather than the assertions below).
+        // Parse with quick_xml to confirm the document is well-formed XML.
+        // A bare `&` or unescaped `<` would cause a parse error on the expect().
+        let mut reader = Reader::from_str(&xml_str);
+        reader.config_mut().trim_text(true);
+        let mut buf = Vec::new();
+        let mut event_count = 0usize;
+        loop {
+            let is_eof = {
+                let ev = reader
+                    .read_event_into(&mut buf)
+                    .expect("XML must parse as well-formed");
+                matches!(ev, Event::Eof)
+            };
+            buf.clear();
+            if is_eof {
+                break;
+            }
+            event_count += 1;
+        }
+        assert!(event_count > 0, "Expected at least one XML event");
+    }
+
+    #[test]
+    fn soap11_fault_special_chars_in_reason_and_detail_are_escaped() {
+        use quick_xml::events::Event;
+        use quick_xml::Reader;
+
+        let special = r#"& < > " '"#;
+        let fault = SoapFault::new(FaultCode::Sender, special, Some(special.to_string()));
+        let xml_bytes = fault.to_xml_bytes_v11();
+        let xml_str = String::from_utf8(xml_bytes).unwrap();
+
+        assert!(
+            !xml_str.contains("& "),
+            "Unescaped '& ' found in SOAP 1.1 fault XML: {xml_str}"
+        );
+        assert!(xml_str.contains("&amp;"), "Expected &amp;: {xml_str}");
+        assert!(xml_str.contains("&lt;"), "Expected &lt;: {xml_str}");
+
+        // Parse to confirm well-formed.
+        let mut reader = Reader::from_str(&xml_str);
+        reader.config_mut().trim_text(true);
+        let mut buf = Vec::new();
+        loop {
+            let is_eof = {
+                let ev = reader.read_event_into(&mut buf).expect("XML must parse");
+                matches!(ev, Event::Eof)
+            };
+            buf.clear();
+            if is_eof {
+                break;
+            }
+        }
     }
 }

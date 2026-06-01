@@ -3,10 +3,19 @@ use crate::fault::SoapFault;
 use std::collections::HashSet;
 use std::time::Instant;
 
+/// Default maximum number of nonces in a single bucket before forced rotation.
+/// Limits memory usage: at most `2 × DEFAULT_MAX_ENTRIES` nonces are held at once.
+const DEFAULT_MAX_ENTRIES: usize = 100_000;
+
 /// Two-bucket rotating nonce cache for WS-Security replay detection.
 ///
 /// Buckets rotate every `half_window` seconds (default: 150 s → 300 s total window).
 /// A nonce present in **either** bucket is considered a replay and rejected.
+///
+/// When the current bucket reaches `max_entries` a forced rotation occurs so the
+/// bucket is replaced by an empty one — legitimate traffic continues but further
+/// nonces from the previous bucket will no longer be detected as replays.  This
+/// is preferable to unbounded growth; the trade-off is documented in `check_and_insert`.
 ///
 /// # Thread-safety
 ///
@@ -32,24 +41,48 @@ pub struct RotatingNonceCache {
     previous: HashSet<String>,
     bucket_start: Instant,
     half_window_secs: u64,
+    max_entries: usize,
 }
 
 impl RotatingNonceCache {
+    /// Create a new cache with the given time-window and default entry cap (100 000).
     pub fn new(half_window_secs: u64) -> Self {
+        Self::with_max_entries(half_window_secs, DEFAULT_MAX_ENTRIES)
+    }
+
+    /// Create a new cache with explicit time-window and per-bucket entry cap.
+    pub fn with_max_entries(half_window_secs: u64, max_entries: usize) -> Self {
         Self {
             current: HashSet::new(),
             previous: HashSet::new(),
             bucket_start: Instant::now(),
             half_window_secs,
+            max_entries,
         }
     }
 
     /// Check nonce for replay and insert if not seen. Returns Err on replay.
+    ///
+    /// If the current bucket is at capacity (`max_entries`), a **forced rotation**
+    /// is performed before inserting: the current bucket becomes the previous bucket
+    /// and a fresh empty bucket is started.  This bounds memory use at the cost of
+    /// a narrow window where very recently-rotated nonces are no longer tracked —
+    /// a DoS flood that exhausts the cap is still bounded, and normal traffic is
+    /// not disrupted.
     pub fn check_and_insert(&mut self, nonce: &str) -> Result<(), SoapFault> {
         self.rotate_if_needed();
+
+        // Check for replay before potentially rotating due to capacity.
         if self.current.contains(nonce) || self.previous.contains(nonce) {
             return Err(SoapFault::sender("WS-Security nonce replay detected"));
         }
+
+        // If current bucket is full, force a rotation to bound memory use.
+        if self.current.len() >= self.max_entries {
+            self.previous = std::mem::take(&mut self.current);
+            self.bucket_start = Instant::now();
+        }
+
         self.current.insert(nonce.to_string());
         Ok(())
     }
@@ -151,6 +184,75 @@ mod tests {
         assert!(
             cache.check_and_insert("gap_nonce").is_ok(),
             "Nonce must be accepted after a 2× half_window idle gap (BLOCK-SS-C02 regression)"
+        );
+    }
+
+    // ── Finding #10: per-bucket cardinality cap ───────────────────────────────
+
+    #[test]
+    fn nonce_cache_enforces_max_entries_cap() {
+        // Use a small cap so we can test quickly.
+        let cap = 10usize;
+        let mut cache = RotatingNonceCache::with_max_entries(150, cap);
+
+        // Insert `cap` nonces to fill the bucket.
+        for i in 0..cap {
+            cache.check_and_insert(&format!("nonce_{i}")).unwrap();
+        }
+
+        // The current bucket is full.  Insert one more — this triggers a forced
+        // rotation and the bucket size resets.
+        cache.check_and_insert("nonce_overflow").unwrap();
+
+        // After the forced rotation + new insert, total live entries are:
+        //   current: 1 ("nonce_overflow")
+        //   previous: cap nonces
+        // The combined size must not grow without bound.
+        let total = cache.current.len() + cache.previous.len();
+        assert!(
+            total <= cap + 1,
+            "Total live nonces ({total}) must not exceed cap+1 ({}) after overflow insert",
+            cap + 1
+        );
+    }
+
+    #[test]
+    fn nonce_cache_cap_does_not_reject_new_nonces_after_rotation() {
+        let cap = 5usize;
+        let mut cache = RotatingNonceCache::with_max_entries(150, cap);
+
+        // Fill to capacity.
+        for i in 0..cap {
+            cache.check_and_insert(&format!("n{i}")).unwrap();
+        }
+
+        // Insert beyond cap — triggers rotation.  The new nonce must be accepted.
+        let result = cache.check_and_insert("new_nonce_after_cap");
+        assert!(
+            result.is_ok(),
+            "New nonce must be accepted after forced rotation, got: {:?}",
+            result.err()
+        );
+    }
+
+    #[test]
+    fn nonce_in_overflow_bucket_still_rejected_as_replay() {
+        let cap = 3usize;
+        let mut cache = RotatingNonceCache::with_max_entries(150, cap);
+
+        // Fill to capacity with nonces including "target".
+        cache.check_and_insert("target").unwrap();
+        cache.check_and_insert("n1").unwrap();
+        cache.check_and_insert("n2").unwrap();
+
+        // Insert a 4th nonce — forces rotation: "target", "n1", "n2" move to previous.
+        cache.check_and_insert("n3").unwrap();
+
+        // "target" is now in the previous bucket — must still be detected as replay.
+        let result = cache.check_and_insert("target");
+        assert!(
+            result.is_err(),
+            "Nonce in previous bucket must still be detected as replay after forced rotation"
         );
     }
 }

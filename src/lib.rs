@@ -65,6 +65,7 @@ pub(crate) mod xsd;
 
 pub mod fault;
 pub mod handler;
+pub mod xml_escape;
 
 pub use crate::dispatch::{build_dispatch_table, DispatchTable};
 pub use crate::fault::{FaultCode, SoapFault};
@@ -75,3 +76,4 @@ pub use crate::wsdl::resolver::WsdlLoader;
 pub use crate::wssec::nonce_cache::RotatingNonceCache;
 pub use crate::wssec::username_token::compute_digest;
 pub use crate::wssec::username_token::validate_username_token;
+pub use crate::xml_escape::{escape_attr, escape_text};
