@@ -71,7 +71,10 @@ pub fn normalize(xml: &[u8], masks: &[MaskRule]) -> Result<String, String> {
     let mut reader = Reader::from_reader(xml);
     // check_end_names defaults to true in quick-xml 0.39 — mismatched end tags
     // surface as an error from read_event_into, satisfying the malformed_xml_errors test.
-    reader.config_mut().trim_text(true);
+    // trim_text(false): quick-xml fragments text around entity refs; trimming edges of each
+    // fragment silently drops significant whitespace adjacent to entities (e.g. spaces around
+    // &apos; or &amp;). soap-server emits compact XML so indentation whitespace is not a concern.
+    reader.config_mut().trim_text(false);
     let mut writer = Writer::new(Cursor::new(Vec::new()));
     let mut stack: Vec<String> = Vec::new();
     let mut buf = Vec::new();
@@ -166,6 +169,20 @@ mod tests {
         let out = normalize(br#"<E a="x &amp; y"/>"#, &[]).unwrap();
         assert!(out.contains("x &amp; y"), "got: {out}");
         assert!(!out.contains("&amp;amp;"), "double-escaped: {out}");
+    }
+
+    #[test]
+    fn preserves_significant_whitespace_around_entities() {
+        // quick-xml splits text at entity refs; normalization must NOT drop the
+        // significant spaces adjacent to an entity (regression: trim_text was eating them).
+        let xml = br#"<E>a &amp; b 'c' d</E>"#;
+        let out = normalize(xml, &[]).unwrap();
+        assert!(out.contains("a &amp; b"), "lost space around &amp;: {out}");
+        // the ' characters re-serialize as &apos; (quick-xml writer) but spaces must remain:
+        assert!(
+            out.contains("b ") && out.contains(" d"),
+            "lost surrounding spaces: {out}"
+        );
     }
 
     #[test]
