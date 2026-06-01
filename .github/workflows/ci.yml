@@ -33,11 +33,11 @@ jobs:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
       - name: Check
-        run: cargo check --all-targets
+        run: cargo check --workspace --all-targets
       - name: Clippy
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Format
-        run: cargo fmt -- --check
+        run: cargo fmt --all -- --check
 
   check-linux:
     name: Check (Linux)
@@ -51,11 +51,11 @@ jobs:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
       - name: Check
-        run: cargo check --all-targets
+        run: cargo check --workspace --all-targets
       - name: Clippy
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Format
-        run: cargo fmt -- --check
+        run: cargo fmt --all -- --check
 
   test:
     name: Test
@@ -82,3 +82,15 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Run tests
         run: cargo test --workspace --all-features
+      - name: crossref unverified-snapshot count
+        run: |
+          python3 - <<'PY'
+          import tomllib, pathlib
+          p = pathlib.Path("crossref/snapshots/status.toml")
+          if p.exists():
+              data = tomllib.loads(p.read_text())
+              n = sum(1 for v in data.values() if v == "unverified")
+              print(f"crossref: {n} unverified snapshot(s) (correctness pending Phase 1b)")
+          else:
+              print("crossref: no snapshots yet")
+          PY
