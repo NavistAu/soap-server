@@ -10,6 +10,17 @@ use std::future::Future;
 #[async_trait]
 pub trait SoapHandler: Send + Sync + 'static {
     async fn handle(&self, body: Bytes) -> Result<Bytes, SoapFault>;
+
+    /// Handle a request with access to the SOAP header element fragments (each is the
+    /// raw bytes of one direct child of `<Header>`). Defaults to ignoring headers and
+    /// calling `handle`. Handlers needing WS-Addressing/WS-Security header data override this.
+    async fn handle_with_headers(
+        &self,
+        body: Bytes,
+        _headers: &[Bytes],
+    ) -> Result<Bytes, SoapFault> {
+        self.handle(body).await
+    }
 }
 
 /// Wraps a closure as a SoapHandler for ergonomic registration.
@@ -42,6 +53,7 @@ where
 mod tests {
     use super::*;
     use crate::fault::{FaultCode, SoapFault};
+    use std::sync::{Arc, Mutex};
 
     #[tokio::test]
     async fn fn_handler_ok_passthrough() {
@@ -86,5 +98,79 @@ mod tests {
         }));
         let result = handler.handle(Bytes::from_static(b"<req/>")).await.unwrap();
         assert_eq!(result, Bytes::from_static(b"<resp/>"));
+    }
+
+    // ── handle_with_headers tests (round-2 #5) ────────────────────────────────
+
+    /// A handler that overrides handle_with_headers, records received header fragments,
+    /// and returns a fixed response.
+    struct HeaderCapturingHandler {
+        captured_headers: Arc<Mutex<Vec<Vec<u8>>>>,
+    }
+
+    #[async_trait::async_trait]
+    impl SoapHandler for HeaderCapturingHandler {
+        async fn handle(&self, _body: Bytes) -> Result<Bytes, SoapFault> {
+            Ok(Bytes::from_static(b"<resp/>"))
+        }
+
+        async fn handle_with_headers(
+            &self,
+            _body: Bytes,
+            headers: &[Bytes],
+        ) -> Result<Bytes, SoapFault> {
+            let mut captured = self.captured_headers.lock().unwrap();
+            for h in headers {
+                captured.push(h.to_vec());
+            }
+            Ok(Bytes::from_static(b"<resp-with-headers/>"))
+        }
+    }
+
+    #[tokio::test]
+    async fn handle_with_headers_override_receives_header_fragments() {
+        let captured = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+        let handler = HeaderCapturingHandler {
+            captured_headers: captured.clone(),
+        };
+
+        let header1 = Bytes::from_static(b"<wsa:To>http://example.com/service</wsa:To>");
+        let header2 = Bytes::from_static(b"<tev:SubscriptionId>sub-123</tev:SubscriptionId>");
+        let headers = [header1.clone(), header2.clone()];
+
+        let result = handler
+            .handle_with_headers(Bytes::from_static(b"<req/>"), &headers)
+            .await
+            .unwrap();
+
+        // Overriding handler produces its own response.
+        assert_eq!(result, Bytes::from_static(b"<resp-with-headers/>"));
+
+        // Both header fragments were delivered.
+        let seen = captured.lock().unwrap();
+        assert_eq!(seen.len(), 2);
+        assert_eq!(seen[0], header1.as_ref());
+        assert_eq!(seen[1], header2.as_ref());
+    }
+
+    #[tokio::test]
+    async fn handle_with_headers_default_falls_through_to_handle() {
+        // FnHandler does NOT override handle_with_headers — the default impl must
+        // delegate to handle() and the handler response must come through unchanged.
+        let handler = FnHandler::new(|body: Bytes| async move {
+            // Echo back the body to prove handle() was actually called.
+            Ok::<Bytes, SoapFault>(body)
+        });
+
+        let body = Bytes::from_static(b"<echo>data</echo>");
+        let header = Bytes::from_static(b"<some:Header>ignored</some:Header>");
+
+        let result = handler
+            .handle_with_headers(body.clone(), &[header])
+            .await
+            .unwrap();
+
+        // Default impl calls handle(body) — should receive the body back.
+        assert_eq!(result, body);
     }
 }

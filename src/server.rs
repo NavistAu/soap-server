@@ -697,8 +697,12 @@ async fn soap_post_handler(
         return fault_response(fault, envelope.soap_version.clone());
     }
 
-    // Step 7: Invoke handler.
-    let response_body = match entry.handler.handle(envelope.body_element).await {
+    // Step 7: Invoke handler (pass header fragments for WS-Addressing/WS-Security use).
+    let response_body = match entry
+        .handler
+        .handle_with_headers(envelope.body_element, &envelope.header_children)
+        .await
+    {
         Ok(bytes) => bytes,
         Err(fault) => return fault_response(fault, envelope.soap_version.clone()),
     };
@@ -812,8 +816,12 @@ async fn soap_post_handler_for_route(
         return fault_response(fault, envelope.soap_version.clone());
     }
 
-    // Step 7: Invoke handler.
-    let response_body = match entry.handler.handle(envelope.body_element).await {
+    // Step 7: Invoke handler (pass header fragments for WS-Addressing/WS-Security use).
+    let response_body = match entry
+        .handler
+        .handle_with_headers(envelope.body_element, &envelope.header_children)
+        .await
+    {
         Ok(bytes) => bytes,
         Err(fault) => return fault_response(fault, envelope.soap_version.clone()),
     };
