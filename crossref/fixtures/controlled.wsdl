@@ -17,16 +17,38 @@
           <xs:element name="Text" type="xs:string" minOccurs="1"/>
         </xs:sequence></xs:complexType>
       </xs:element>
+
+      <!-- Named complexType for EchoNamed operation (Group C: named-type validation) -->
+      <xs:complexType name="EchoNamedInputType">
+        <xs:sequence>
+          <xs:element name="Value" type="xs:string" minOccurs="1"/>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:element name="EchoNamed" type="tns:EchoNamedInputType"/>
+      <xs:element name="EchoNamedResponse">
+        <xs:complexType><xs:sequence>
+          <xs:element name="Value" type="xs:string" minOccurs="1"/>
+        </xs:sequence></xs:complexType>
+      </xs:element>
     </xs:schema>
   </wsdl:types>
+
   <wsdl:message name="EchoRequest"><wsdl:part name="parameters" element="tns:Echo"/></wsdl:message>
   <wsdl:message name="EchoResponse"><wsdl:part name="parameters" element="tns:EchoResponse"/></wsdl:message>
+  <wsdl:message name="EchoNamedRequest"><wsdl:part name="parameters" element="tns:EchoNamed"/></wsdl:message>
+  <wsdl:message name="EchoNamedResponse"><wsdl:part name="parameters" element="tns:EchoNamedResponse"/></wsdl:message>
+
   <wsdl:portType name="ControlledPort">
     <wsdl:operation name="Echo">
       <wsdl:input message="tns:EchoRequest"/>
       <wsdl:output message="tns:EchoResponse"/>
     </wsdl:operation>
+    <wsdl:operation name="EchoNamed">
+      <wsdl:input message="tns:EchoNamedRequest"/>
+      <wsdl:output message="tns:EchoNamedResponse"/>
+    </wsdl:operation>
   </wsdl:portType>
+
   <wsdl:binding name="ControlledBinding" type="tns:ControlledPort">
     <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
     <wsdl:operation name="Echo">
@@ -34,7 +56,13 @@
       <wsdl:input><soap:body use="literal"/></wsdl:input>
       <wsdl:output><soap:body use="literal"/></wsdl:output>
     </wsdl:operation>
+    <wsdl:operation name="EchoNamed">
+      <soap:operation soapAction="http://crossref.example/controlled/EchoNamed"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+    </wsdl:operation>
   </wsdl:binding>
+
   <wsdl:service name="ControlledService">
     <wsdl:port name="ControlledPort" binding="tns:ControlledBinding">
       <soap:address location="http://localhost/soap"/>

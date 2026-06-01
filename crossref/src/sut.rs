@@ -84,10 +84,50 @@ fn echo_handler() -> impl soap_server::SoapHandler {
     })
 }
 
+/// Extract the text content of the first element whose local name ends with "Value".
+fn extract_value(body: &[u8]) -> Option<String> {
+    use quick_xml::events::Event;
+    use quick_xml::Reader;
+
+    let mut reader = Reader::from_reader(body);
+    reader.config_mut().trim_text(true);
+    let mut in_value = false;
+    loop {
+        match reader.read_event() {
+            Ok(Event::Start(e)) => {
+                let local = e.local_name();
+                let local_str = std::str::from_utf8(local.as_ref()).unwrap_or("");
+                if local_str.ends_with("Value") {
+                    in_value = true;
+                }
+            }
+            Ok(Event::Text(t)) if in_value => {
+                return Some(t.decode().unwrap_or_default().into_owned());
+            }
+            Ok(Event::End(_)) if in_value => return None,
+            Ok(Event::Eof) => return None,
+            Err(_) => return None,
+            _ => {}
+        }
+    }
+}
+
+fn echo_named_handler() -> impl soap_server::SoapHandler {
+    FnHandler::new(|body: Bytes| async move {
+        let value = extract_value(&body).unwrap_or_default();
+        let escaped = soap_server::escape_text(&value);
+        let resp = format!(
+            r#"<c:EchoNamedResponse xmlns:c="http://crossref.example/controlled"><c:Value>{escaped}</c:Value></c:EchoNamedResponse>"#
+        );
+        Ok::<Bytes, soap_server::SoapFault>(Bytes::from(resp))
+    })
+}
+
 pub fn build_controlled_sut() -> Sut {
     let svc = ServerBuilder::from_wsdl_bytes(CONTROLLED_WSDL.to_vec())
         .path("/soap")
         .handler("Echo", echo_handler())
+        .handler("EchoNamed", echo_named_handler())
         .build()
         .expect("controlled WSDL should build without error");
     let server = TestServer::new(svc.into_router());
@@ -108,5 +148,30 @@ mod tests {
         assert_eq!(resp.status, 200);
         assert!(resp.body_utf8().contains("EchoResponse"));
         assert!(resp.body_utf8().contains("hi"));
+    }
+
+    #[tokio::test]
+    async fn echo_named_success_returns_echonamedresponse() {
+        let sut = build_controlled_sut();
+        let body = br#"<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope"><env:Body><c:EchoNamed xmlns:c="http://crossref.example/controlled"><c:Value>named_value</c:Value></c:EchoNamed></env:Body></env:Envelope>"#;
+        let resp = sut
+            .replay("/soap", body, "application/soap+xml; charset=utf-8")
+            .await;
+        assert_eq!(resp.status, 200);
+        assert!(resp.body_utf8().contains("EchoNamedResponse"));
+        assert!(resp.body_utf8().contains("named_value"));
+    }
+
+    #[tokio::test]
+    async fn echo_named_missing_required_returns_fault() {
+        let sut = build_controlled_sut();
+        // EchoNamed without the required Value element
+        let body = br#"<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope"><env:Body><c:EchoNamed xmlns:c="http://crossref.example/controlled"/></env:Body></env:Envelope>"#;
+        let resp = sut
+            .replay("/soap", body, "application/soap+xml; charset=utf-8")
+            .await;
+        assert_eq!(resp.status, 500);
+        assert!(resp.body_utf8().contains("Fault"));
+        assert!(resp.body_utf8().contains("Value"));
     }
 }

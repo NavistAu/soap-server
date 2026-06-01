@@ -1,0 +1,13 @@
+name = "doc_literal_named_missing"
+operation = "EchoNamed"
+http_method = "POST"
+http_path = "/soap"
+content_type = "application/soap+xml; charset=utf-8"
+soap_version = "1.2"
+expected_status = 500
+outcome = "fault"
+request_file = "doc_literal_named_missing.request.xml"
+
+[fault]
+code = "Sender"
+detail_policy = "absent"
