@@ -106,18 +106,24 @@ heavyweight comparator tooling live in containers, not in the published crate.
 
 > Rationale for Rust orchestrator: third-party clients are polyglot and must run
 > as their own containers regardless of runner language, so an in-process client
-> host buys nothing. With validation/C14N containerized in the Java XML oracle, the runner's
-> remaining job is orchestration + masking + diff + reporting — best kept in one
-> With validation/C14N containerized in the Java XML oracle, the runner's
-> remaining job is orchestration + masking + diff + reporting — best kept in one
-> language shared with Layer 1.
+> host buys nothing. With validation/C14N containerized in the Java XML oracle, the
+> runner's remaining job is orchestration + masking + diff + reporting — best kept
+> in one language shared with Layer 1.
 
 ## 5. Components
 
 ### 5.1 Scenarios (single source of truth)
-A declarative `scenarios/` set. Each scenario = operation name + request
-body/headers + auth context + expectation (succeed, or a specific fault). Consumed
-by **both** layers so Rust and the Docker orchestrator exercise identical cases.
+A declarative `scenarios/` set, consumed by **both** layers so Rust and the Docker
+orchestrator exercise identical cases. Each scenario declares:
+- **operation name** + request body + request headers + auth context;
+- **HTTP method + path** (e.g. `POST /onvif/device_service`, or `GET …?wsdl`);
+- **expected HTTP status**;
+- **expected SOAP version** (1.1 / 1.2);
+- **expected `Content-Type`**;
+- **expected outcome** — `success` or `fault`;
+- for faults: the **expected fault class** (code/subcode) and the **detail policy**
+  (e.g. "detail present with a raw XML child"; reason text is *not* asserted — see
+  §10 on negative-case equivalence).
 
 ### 5.2 Snapshots (golden corpus)
 Per scenario, the *normalized* expected response(s), consumed by Layer 1. Each
@@ -144,6 +150,17 @@ string everywhere would hide a wrong `EndpointReference/Address`. The masking + 
 comparison is plain Rust (not spec interpretation); canonicalization is delegated to
 the oracle.
 
+**Normalization pipeline (exact order):**
+1. **parse** the response XML;
+2. **validate** envelope / body / fault / headers (§5.6) via the oracle;
+3. **apply path-scoped masks** on the parsed DOM / canonical-path model (so masks
+   are path-bound, never string-bound);
+4. **canonicalize** the masked tree with the Java XML oracle (exclusive C14N);
+5. **diff** the resulting canonical bytes.
+
+Masking happens on the tree **before** canonicalization, so a mask is always a path
+selection — this is what structurally prevents accidental string masks.
+
 ### 5.4 Comparator manifest
 A per-repo `manifest.toml` listing each comparator: `name`, `role`
 (`reference-server` | `interop-client` | `schema-oracle`), the Docker image pinned
@@ -169,9 +186,11 @@ these levels (failure at any level fails the scenario):
    operation (the document/literal element or RPC wrapper).
 3. **Fault structure** against the SOAP-version fault schema (1.1 `faultcode`/
    `faultstring`/`detail` vs 1.2 `Code`/`Reason`/`Detail`).
-4. **Headers** (if present) — e.g. WS-Security/WS-Addressing — validated against
-   their schemas; optional in Phase 1 but the validator must not silently ignore
-   unknown/invalid headers.
+4. **Headers** — e.g. WS-Security/WS-Addressing:
+   - If a scenario **declares expected response headers**, validate them against
+     their schemas and **fail the scenario on invalidity**.
+   - If a scenario **does not declare header validation**, report headers as
+     **`unvalidated`** in the scenario output (never silently passed).
 
 The oracle validates the *envelope* and the *payload* separately (envelope schema
 for the SOAP frame; the operation's output schema for the body child) rather than
@@ -237,7 +256,8 @@ hard cases (namespaces, faults, doc/literal, WS-Security) — see §10.
   - **1b** — Docker Layer 2: CXF **conformance** reference server (running the §5.8 fixtures) + Rust orchestrator that validates via the **Java XML oracle**, diffs vs CXF, and **promotes** snapshots `unverified`→`verified`. (External correctness first enters here.)
   - **1c** — **interop**: CXF + Zeep clients drive our server; capture/replay traces; live runs assert client operations succeed.
 - **Phase 2:** onvif-server suite — same framework, ONVIF comparators
-  (`onvif-srvd`, `python-onvif-zeep`, ONVIF XSD via Xerces). Own spec→plan→build.
+  (`onvif-srvd`, `python-onvif-zeep`, ONVIF XSD via the Java XML oracle). Own
+  spec→plan→build.
 - **Phase 3 (future):** additional comparators per scenario, multi-version
   matrices, richer reporting.
 
@@ -276,6 +296,13 @@ not complete until each exists and reaches a verdict:
   timestamp**, **replay** (nonce reuse), and **missing auth** on a non-bypassed op.
 - `GET ?wsdl` address rewrite for a **single-service** and a **multi-service** WSDL
   (non-matched service address preserved).
+
+**Negative-case agreement semantics.** For fault/negative scenarios, "reference
+agreement" means **both produce a schema-valid SOAP fault of the equivalent fault
+class** (matching code/subcode per §5.1) — **not** identical `reason`/`faultstring`
+text, which legitimately differs between implementations. The masked diff and the
+verdict model (§5.7) treat reason text as non-asserted for faults; the fault *class*
+and *structure* are what must agree.
 
 (ONVIF-specific seed scenarios — WhiteBalance single-element, PTZ coordinate
 rejection, pull-point WS-Addressing, discovery probe matching — are defined in the
