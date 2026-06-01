@@ -113,8 +113,13 @@ impl ServerBuilder {
         self
     }
 
-    /// Configure credential lookup. The closure is called with a username and must return
-    /// the stored password (plaintext) for that user, or `None` if the user does not exist.
+    /// Configure credential lookup, enabling WS-Security enforcement. The closure is called
+    /// with a username and must return the stored password (plaintext) for that user, or
+    /// `None` if the user does not exist.
+    ///
+    /// If `auth` is never called, the server runs **unauthenticated**: WS-Security headers
+    /// are not required or validated on any operation. Calling `auth` enables WS-Security
+    /// enforcement on all non-bypassed operations (see [`auth_bypass`](Self::auth_bypass)).
     pub fn auth<F>(mut self, f: F) -> Self
     where
         F: Fn(&str) -> Option<String> + Send + Sync + 'static,
@@ -645,7 +650,10 @@ async fn soap_post_handler(
     };
 
     // Step 5: If auth required, validate WS-Security UsernameToken.
-    if entry.auth_required {
+    // Auth is only enforced when a credential validator (`auth_fn`) is configured
+    // via `ServerBuilder::auth`. With no validator the server runs unauthenticated
+    // — see the `auth` builder docs.
+    if entry.auth_required && svc.auth_fn.is_some() {
         match find_security_header(&envelope.header_children) {
             None => {
                 return fault_response(
@@ -757,7 +765,10 @@ async fn soap_post_handler_for_route(
     };
 
     // Step 5: If auth required, validate WS-Security UsernameToken.
-    if entry.auth_required {
+    // Auth is only enforced when a credential validator (`auth_fn`) is configured
+    // via `ServerBuilder::auth`. With no validator the server runs unauthenticated
+    // — see the `auth` builder docs.
+    if entry.auth_required && svc.auth_fn.is_some() {
         match find_security_header(&envelope.header_children) {
             None => {
                 return fault_response(
