@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "A spec-compliant SOAP 1.2 server library for Rust with ONVIF support"
+exclude = ["/crossref"]
 
 [dependencies]
 roxmltree = "0.21"
@@ -23,3 +24,6 @@ subtle = "2"
 [dev-dependencies]
 tokio = { version = "1", features = ["full", "test-util"] }
 axum-test = "20"
+
+[workspace]
+members = ["crossref"]

@@ -1,0 +1,16 @@
+[package]
+name = "crossref"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+soap-server = { path = ".." }
+quick-xml = "0.39"
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }
+axum-test = "20"
+similar-asserts = "1"
