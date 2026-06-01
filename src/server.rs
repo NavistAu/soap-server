@@ -193,7 +193,11 @@ impl ServerBuilder {
 
             // First pass: collect which ops belong to each service.
             for svc_name in &service_names {
-                let svc = resolved.definition.services.get(svc_name).unwrap();
+                let svc = resolved
+                    .definition
+                    .services
+                    .get(svc_name)
+                    .ok_or_else(|| BuildError::UnknownService(svc_name.clone()))?;
                 for port in &svc.ports {
                     let binding_local = &port.binding.local_name;
                     if let Some(binding) = resolved.definition.bindings.get(binding_local) {
@@ -212,7 +216,11 @@ impl ServerBuilder {
             }
 
             for svc_name in &service_names {
-                let svc = resolved.definition.services.get(svc_name).unwrap();
+                let svc = resolved
+                    .definition
+                    .services
+                    .get(svc_name)
+                    .ok_or_else(|| BuildError::UnknownService(svc_name.clone()))?;
 
                 // Collect ops for this service and build handlers subset.
                 let mut svc_op_names: Vec<String> = Vec::new();
@@ -314,6 +322,8 @@ pub enum BuildError {
     UnregisteredOperation(String),
     #[error("Registered handler '{0}' has no matching WSDL operation")]
     UnknownOperation(String),
+    #[error("WSDL service '{0}' not found in resolved definition")]
+    UnknownService(String),
 }
 
 // ── WSDL loader (no-op for embedded/self-contained WSDLs) ────────────────────
@@ -609,8 +619,12 @@ async fn soap_post_handler(
     };
 
     // Step 8: Serialize into SOAP envelope.
-    let envelope_bytes = serialize_envelope(response_body, soap_version);
-    let content_type_value = response_content_type(&envelope.soap_version);
+    // Use the envelope namespace as the single authoritative SOAP version source for both
+    // serialization and response Content-Type (BLOCK-SS-C04 fix). The Content-Type header
+    // version is a hint; the envelope namespace is what actually identifies the SOAP version.
+    let response_version = envelope.soap_version.clone();
+    let envelope_bytes = serialize_envelope(response_body, response_version.clone());
+    let content_type_value = response_content_type(&response_version);
 
     (
         StatusCode::OK,
@@ -717,8 +731,11 @@ async fn soap_post_handler_for_route(
     };
 
     // Step 8: Serialize into SOAP envelope.
-    let envelope_bytes = serialize_envelope(response_body, soap_version);
-    let content_type_value = response_content_type(&envelope.soap_version);
+    // Use the envelope namespace as the single authoritative SOAP version source for both
+    // serialization and response Content-Type (BLOCK-SS-C04 fix).
+    let response_version = envelope.soap_version.clone();
+    let envelope_bytes = serialize_envelope(response_body, response_version.clone());
+    let content_type_value = response_content_type(&response_version);
 
     (
         StatusCode::OK,

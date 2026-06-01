@@ -11,13 +11,28 @@ pub enum FaultCode {
 }
 
 impl FaultCode {
-    pub fn as_str(&self) -> &'static str {
+    /// Returns the SOAP 1.2 fault code string (e.g. `"env:Sender"`, `"env:Receiver"`).
+    /// Use this when serializing SOAP 1.2 responses.
+    pub fn as_soap12_str(&self) -> &'static str {
         match self {
             FaultCode::VersionMismatch => "env:VersionMismatch",
             FaultCode::MustUnderstand => "env:MustUnderstand",
             FaultCode::DataEncodingUnknown => "env:DataEncodingUnknown",
             FaultCode::Sender => "env:Sender",
             FaultCode::Receiver => "env:Receiver",
+        }
+    }
+
+    /// Returns the SOAP 1.1 fault code string (e.g. `"env:Client"`, `"env:Server"`).
+    /// Use this when serializing SOAP 1.1 responses.
+    pub fn as_soap11_str(&self) -> &'static str {
+        match self {
+            FaultCode::VersionMismatch => "env:VersionMismatch",
+            FaultCode::MustUnderstand => "env:MustUnderstand",
+            // DataEncodingUnknown has no SOAP 1.1 equivalent — map to Server per Apache CXF
+            FaultCode::DataEncodingUnknown => "env:Server",
+            FaultCode::Sender => "env:Client",
+            FaultCode::Receiver => "env:Server",
         }
     }
 }
@@ -103,7 +118,7 @@ impl SoapFault {
     /// Serialize to a complete SOAP 1.2 envelope XML string.
     /// HTTP status is always 500 per W3C SOAP 1.2 spec Section 7.4.2 (FLT-03).
     pub fn to_xml_bytes(&self) -> Vec<u8> {
-        let code = self.code.as_str();
+        let code = self.code.as_soap12_str();
         let reason = &self.reason;
 
         let detail_xml = match &self.detail {
@@ -124,31 +139,69 @@ mod tests {
     use super::*;
 
     #[test]
-    fn fault_code_sender_as_str() {
-        assert_eq!(FaultCode::Sender.as_str(), "env:Sender");
+    fn fault_code_sender_as_soap12_str() {
+        assert_eq!(FaultCode::Sender.as_soap12_str(), "env:Sender");
     }
 
     #[test]
-    fn fault_code_receiver_as_str() {
-        assert_eq!(FaultCode::Receiver.as_str(), "env:Receiver");
+    fn fault_code_receiver_as_soap12_str() {
+        assert_eq!(FaultCode::Receiver.as_soap12_str(), "env:Receiver");
     }
 
     #[test]
-    fn fault_code_version_mismatch_as_str() {
-        assert_eq!(FaultCode::VersionMismatch.as_str(), "env:VersionMismatch");
-    }
-
-    #[test]
-    fn fault_code_must_understand_as_str() {
-        assert_eq!(FaultCode::MustUnderstand.as_str(), "env:MustUnderstand");
-    }
-
-    #[test]
-    fn fault_code_data_encoding_unknown_as_str() {
+    fn fault_code_version_mismatch_as_soap12_str() {
         assert_eq!(
-            FaultCode::DataEncodingUnknown.as_str(),
+            FaultCode::VersionMismatch.as_soap12_str(),
+            "env:VersionMismatch"
+        );
+    }
+
+    #[test]
+    fn fault_code_must_understand_as_soap12_str() {
+        assert_eq!(
+            FaultCode::MustUnderstand.as_soap12_str(),
+            "env:MustUnderstand"
+        );
+    }
+
+    #[test]
+    fn fault_code_data_encoding_unknown_as_soap12_str() {
+        assert_eq!(
+            FaultCode::DataEncodingUnknown.as_soap12_str(),
             "env:DataEncodingUnknown"
         );
+    }
+
+    #[test]
+    fn fault_code_sender_as_soap11_str() {
+        assert_eq!(FaultCode::Sender.as_soap11_str(), "env:Client");
+    }
+
+    #[test]
+    fn fault_code_receiver_as_soap11_str() {
+        assert_eq!(FaultCode::Receiver.as_soap11_str(), "env:Server");
+    }
+
+    #[test]
+    fn fault_code_version_mismatch_as_soap11_str() {
+        assert_eq!(
+            FaultCode::VersionMismatch.as_soap11_str(),
+            "env:VersionMismatch"
+        );
+    }
+
+    #[test]
+    fn fault_code_must_understand_as_soap11_str() {
+        assert_eq!(
+            FaultCode::MustUnderstand.as_soap11_str(),
+            "env:MustUnderstand"
+        );
+    }
+
+    #[test]
+    fn fault_code_data_encoding_unknown_as_soap11_str() {
+        // DataEncodingUnknown has no SOAP 1.1 equivalent — maps to env:Server
+        assert_eq!(FaultCode::DataEncodingUnknown.as_soap11_str(), "env:Server");
     }
 
     #[test]

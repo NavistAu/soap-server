@@ -357,9 +357,12 @@ fn collect_required_element_names(xsd_type: &crate::xsd::types::XsdType) -> Vec<
 
 fn collect_required_from_content(content: &ComplexContent) -> Vec<String> {
     let elements = match content {
-        ComplexContent::Sequence(els) | ComplexContent::All(els) | ComplexContent::Choice(els) => {
-            els
-        }
+        ComplexContent::Sequence(els) | ComplexContent::All(els) => els,
+        // xs:choice: individual children are NOT independently required — the choice
+        // as a whole may be required (minOccurs > 0 on the choice group itself), but
+        // a valid request only provides ONE branch. Returning an empty required list
+        // prevents the validator from demanding all branches simultaneously.
+        ComplexContent::Choice(_) => return vec![],
         ComplexContent::ComplexExtension { content, .. } => {
             return collect_required_from_content(content)
         }

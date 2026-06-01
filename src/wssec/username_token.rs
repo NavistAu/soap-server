@@ -36,7 +36,22 @@ pub struct UsernameToken {
 }
 
 /// Compute PasswordDigest per OASIS WS-Security UsernameToken Profile 1.1 spec:
-/// digest = Base64(SHA-1(Base64Decode(Nonce) ++ Created_UTF8 ++ Password_UTF8))
+/// `digest = Base64( SHA-1( Base64Decode(Nonce) ++ Created_UTF8 ++ Password_UTF8 ) )`
+///
+/// # Arguments
+/// - `nonce_b64`: the **base64-encoded** nonce string (as it appears in the XML `<wsse:Nonce>` element).
+///   This function decodes it internally. Passing raw nonce bytes (not base64-encoded) will produce
+///   an incorrect digest.
+/// - `created`: the ISO 8601 Created timestamp string (e.g. `"2024-01-01T00:00:00.000Z"`).
+/// - `password`: the plaintext password.
+///
+/// Returns `Err(SoapFault)` if `nonce_b64` is not valid base64.
+///
+/// # Note
+/// This function is part of soap-server's internal WS-Security implementation.
+/// It is exported for testing convenience but is not intended as a stable public API.
+/// Prefer using [`validate_username_token`] for full token validation.
+#[doc(hidden)]
 pub fn compute_digest(nonce_b64: &str, created: &str, password: &str) -> Result<String, SoapFault> {
     // Add padding if needed for base64 decoding
     let padded = add_base64_padding(nonce_b64);
@@ -203,9 +218,28 @@ pub fn parse_username_token(xml_bytes: &[u8]) -> Result<UsernameToken, SoapFault
     })
 }
 
-/// Validate a WS-Security UsernameToken.
+/// Validate a WS-Security UsernameToken from a raw `<wsse:Security>` XML element.
 ///
-/// Returns the authenticated username on success, or a SoapFault on failure.
+/// Returns the authenticated username on success, or a [`SoapFault`] on failure.
+///
+/// # Arguments
+/// - `security_bytes`: raw XML bytes of the `<wsse:Security>` header child element.
+/// - `get_password`: closure mapping a username to its stored plaintext password,
+///   or `None` if the user is unknown. Called with the username from the token.
+/// - `nonce_cache`: replay-detection cache. Takes `&mut self` — the caller must hold
+///   an exclusive lock (e.g. via `tokio::sync::Mutex`) when calling this in an async
+///   context. See [`RotatingNonceCache`] for thread-safety guidance.
+/// - `tolerance_secs`: maximum age in seconds for the `<wsu:Created>` timestamp.
+///   Requests older than this are rejected as expired.
+/// - `now`: current UTC time, used for timestamp freshness checks. Pass `Utc::now()`
+///   in production; inject a fixed value in tests.
+///
+/// # Validation steps
+/// 1. Parse the `<wsse:UsernameToken>` from `security_bytes`.
+/// 2. Look up the stored password via `get_password`.
+/// 3. Verify the password (PasswordDigest or PasswordText).
+/// 4. Check that `<wsu:Created>` is within `tolerance_secs` of `now`.
+/// 5. Check the nonce for replay via `nonce_cache`.
 pub fn validate_username_token(
     security_bytes: &[u8],
     get_password: &dyn Fn(&str) -> Option<String>,
