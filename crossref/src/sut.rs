@@ -43,6 +43,23 @@ impl Sut {
             body: r.as_bytes().to_vec(),
         }
     }
+
+    /// Issue a GET request to `path?wsdl` and return the response.
+    /// Used for wsdl_rewrite_* scenarios (Group E).
+    pub async fn replay_get_wsdl(&self, path: &str) -> Response {
+        let r = self.server.get(path).add_query_param("wsdl", "").await;
+        let content_type = r
+            .headers()
+            .get("content-type")
+            .and_then(|h| h.to_str().ok())
+            .unwrap_or("")
+            .to_string();
+        Response {
+            status: r.status_code().as_u16(),
+            content_type,
+            body: r.as_bytes().to_vec(),
+        }
+    }
 }
 
 /// Extract the text content of the first element whose local name ends with "Text".
@@ -130,6 +147,39 @@ pub fn build_controlled_sut() -> Sut {
         .handler("EchoNamed", echo_named_handler())
         .build()
         .expect("controlled WSDL should build without error");
+    let server = TestServer::new(svc.into_router());
+    Sut { server }
+}
+
+/// Build the authed controlled SUT with a lenient timestamp tolerance (~100 years),
+/// so that static request fixtures with a fixed Created timestamp never expire.
+/// Used for wssec_digest_success, wssec_bad_password, and wssec_missing_auth scenarios.
+pub fn build_controlled_sut_authed() -> Sut {
+    let svc = ServerBuilder::from_wsdl_bytes(CONTROLLED_WSDL.to_vec())
+        .path("/soap")
+        .handler("Echo", echo_handler())
+        .handler("EchoNamed", echo_named_handler())
+        .auth(|user| (user == "alice").then(|| "secret".to_string()))
+        // ~100 years in seconds so fixed Created never goes stale
+        .timestamp_tolerance_secs(3_153_600_000)
+        .build()
+        .expect("authed controlled WSDL should build without error");
+    let server = TestServer::new(svc.into_router());
+    Sut { server }
+}
+
+/// Build the authed controlled SUT with a tight (300 s) timestamp tolerance.
+/// Used for wssec_stale_timestamp — the fixed Created "2000-01-01T00:00:00.000Z"
+/// is decades in the past and must be rejected.
+pub fn build_controlled_sut_authed_strict() -> Sut {
+    let svc = ServerBuilder::from_wsdl_bytes(CONTROLLED_WSDL.to_vec())
+        .path("/soap")
+        .handler("Echo", echo_handler())
+        .handler("EchoNamed", echo_named_handler())
+        .auth(|user| (user == "alice").then(|| "secret".to_string()))
+        .timestamp_tolerance_secs(300)
+        .build()
+        .expect("authed-strict controlled WSDL should build without error");
     let server = TestServer::new(svc.into_router());
     Sut { server }
 }

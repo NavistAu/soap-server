@@ -1,0 +1,9 @@
+name = "wssec_digest_success"
+operation = "Echo"
+http_method = "POST"
+http_path = "/soap"
+content_type = "application/soap+xml; charset=utf-8"
+soap_version = "1.2"
+expected_status = 200
+outcome = "success"
+request_file = "wssec_digest_success.request.xml"
