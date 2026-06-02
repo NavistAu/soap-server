@@ -44,6 +44,9 @@ pub struct SoapFault {
     pub code: FaultCode,
     pub reason: String,
     pub detail: Option<String>,
+    /// Raw, verbatim XML to emit as the fault detail child element (not escaped).
+    /// Takes precedence over `detail` when both are set.
+    pub detail_xml: Option<String>,
 }
 
 impl SoapFault {
@@ -52,7 +55,16 @@ impl SoapFault {
             code,
             reason: reason.into(),
             detail,
+            detail_xml: None,
         }
+    }
+
+    /// Attach a raw XML child element as the fault detail. The provided XML is emitted
+    /// VERBATIM inside `<env:Detail>` (SOAP 1.2) / `<detail>` (SOAP 1.1) — it is NOT escaped,
+    /// so the caller MUST supply well-formed XML. Takes precedence over the text `detail`.
+    pub fn with_detail_xml(mut self, xml: impl Into<String>) -> Self {
+        self.detail_xml = Some(xml.into());
+        self
     }
 
     pub fn sender(reason: impl Into<String>) -> Self {
@@ -107,9 +119,13 @@ impl SoapFault {
             FaultCode::DataEncodingUnknown => "SOAP-ENV:Server",
         };
         let reason = escape_text(&self.reason);
-        let detail_xml = match &self.detail {
-            Some(detail) => format!("<detail>{}</detail>", escape_text(detail)),
-            None => String::new(),
+        let detail_xml = if let Some(raw) = &self.detail_xml {
+            format!("<detail>{raw}</detail>")
+        } else {
+            match &self.detail {
+                Some(detail) => format!("<detail>{}</detail>", escape_text(detail)),
+                None => String::new(),
+            }
         };
         format!(
             r#"<SOAP-ENV:Envelope xmlns:SOAP-ENV="{ns}"><SOAP-ENV:Body><SOAP-ENV:Fault><faultcode>{faultcode}</faultcode><faultstring>{reason}</faultstring>{detail_xml}</SOAP-ENV:Fault></SOAP-ENV:Body></SOAP-ENV:Envelope>"#
@@ -122,9 +138,13 @@ impl SoapFault {
         let code = self.code.as_soap12_str();
         let reason = escape_text(&self.reason);
 
-        let detail_xml = match &self.detail {
-            Some(detail) => format!("<env:Detail>{}</env:Detail>", escape_text(detail)),
-            None => String::new(),
+        let detail_xml = if let Some(raw) = &self.detail_xml {
+            format!("<env:Detail>{raw}</env:Detail>")
+        } else {
+            match &self.detail {
+                Some(detail) => format!("<env:Detail>{}</env:Detail>", escape_text(detail)),
+                None => String::new(),
+            }
         };
 
         let xml = format!(
@@ -505,6 +525,67 @@ mod tests {
             event_count += 1;
         }
         assert!(event_count > 0, "Expected at least one XML event");
+    }
+
+    // ── detail_xml (raw XML child) tests ────────────────────────────────────
+
+    #[test]
+    fn serialize_fault_with_raw_xml_detail_soap12() {
+        let fault = SoapFault::sender("bad")
+            .with_detail_xml(r#"<c:Info xmlns:c="urn:x"><c:Code>42</c:Code></c:Info>"#);
+        let xml = String::from_utf8(fault.to_xml_bytes()).unwrap();
+        // raw child present, NOT escaped:
+        assert!(
+            xml.contains(
+                r#"<env:Detail><c:Info xmlns:c="urn:x"><c:Code>42</c:Code></c:Info></env:Detail>"#
+            ),
+            "got: {xml}"
+        );
+        assert!(
+            !xml.contains("&lt;c:Info"),
+            "detail must not be escaped: {xml}"
+        );
+    }
+
+    #[test]
+    fn serialize_fault_with_raw_xml_detail_soap11() {
+        let fault =
+            SoapFault::sender("bad").with_detail_xml(r#"<c:Info xmlns:c="urn:x">x</c:Info>"#);
+        let xml = String::from_utf8(fault.to_xml_bytes_v11()).unwrap();
+        assert!(
+            xml.contains(r#"<detail><c:Info xmlns:c="urn:x">x</c:Info></detail>"#),
+            "got: {xml}"
+        );
+        assert!(
+            !xml.contains("&lt;c:Info"),
+            "detail must not be escaped: {xml}"
+        );
+    }
+
+    #[test]
+    fn detail_xml_takes_precedence_over_text_detail() {
+        let fault = SoapFault::new(FaultCode::Sender, "r", Some("plaintext".into()))
+            .with_detail_xml("<x:Y xmlns:x=\"urn:z\"/>");
+        let xml = String::from_utf8(fault.to_xml_bytes()).unwrap();
+        assert!(
+            xml.contains("<x:Y xmlns:x=\"urn:z\"/>"),
+            "raw xml should win: {xml}"
+        );
+        assert!(
+            !xml.contains("plaintext"),
+            "text detail should be suppressed when detail_xml set: {xml}"
+        );
+    }
+
+    #[test]
+    fn existing_text_detail_still_escaped_when_no_xml() {
+        // regression: the existing escaped-text path is unchanged when detail_xml is None.
+        let fault = SoapFault::new(FaultCode::Sender, "r", Some("a < b & c".into()));
+        let xml = String::from_utf8(fault.to_xml_bytes()).unwrap();
+        assert!(
+            xml.contains("a &lt; b &amp; c"),
+            "text detail must still be escaped: {xml}"
+        );
     }
 
     #[test]
