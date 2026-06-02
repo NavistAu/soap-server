@@ -79,6 +79,27 @@ impl SnapshotStore {
             .filter(|v| v.as_str() == Status::Unverified.as_str())
             .count())
     }
+
+    /// Flip a scenario's status to `verified` in status.toml WITHOUT touching the
+    /// Layer-1 snapshot bytes. Used by Layer-2 promotion (spec §5.2).
+    pub fn write_verified(&self, name: &str) -> Result<(), String> {
+        let mut map = self.load_status_map();
+        map.insert(name.to_string(), Status::Verified.as_str().to_string());
+        self.save_status_map(&map)
+    }
+
+    /// Store the oracle-canonical conformance evidence bytes under
+    /// `snapshots/canonical/<name>.c14n`. Layer-1 snapshot bytes are NOT touched.
+    pub fn write_canonical(&self, name: &str, bytes: &[u8]) -> Result<(), String> {
+        let canon_dir = self.dir.join("canonical");
+        std::fs::create_dir_all(&canon_dir).map_err(|e| e.to_string())?;
+        std::fs::write(canon_dir.join(format!("{name}.c14n")), bytes).map_err(|e| e.to_string())
+    }
+
+    /// Read the oracle-canonical evidence bytes for a scenario (if promoted).
+    pub fn read_canonical(&self, name: &str) -> Option<Vec<u8>> {
+        std::fs::read(self.dir.join("canonical").join(format!("{name}.c14n"))).ok()
+    }
 }
 
 #[cfg(test)]
@@ -121,5 +142,39 @@ mod tests {
         store.write_unverified("a", "<a/>").unwrap();
         store.write_unverified("b", "<b/>").unwrap();
         assert_eq!(store.unverified_count().unwrap(), 2);
+    }
+
+    #[test]
+    fn write_verified_flips_status_leaves_snapshot_bytes_intact() {
+        let dir = tmp();
+        let store = SnapshotStore::new(&dir);
+        // First capture an unverified snapshot.
+        store.write_unverified("sc_a", "<original/>").unwrap();
+        assert_eq!(store.status("sc_a").unwrap(), Status::Unverified);
+        // Promote to verified — must not touch the .xml bytes.
+        store.write_verified("sc_a").unwrap();
+        assert_eq!(store.status("sc_a").unwrap(), Status::Verified);
+        // .xml bytes unchanged.
+        assert_eq!(store.read("sc_a").unwrap(), "<original/>");
+    }
+
+    #[test]
+    fn write_canonical_round_trip() {
+        let dir = tmp();
+        let store = SnapshotStore::new(&dir);
+        let bytes = b"<canonical>evidence</canonical>";
+        store.write_canonical("sc_b", bytes).unwrap();
+        let back = store.read_canonical("sc_b").unwrap();
+        assert_eq!(back, bytes);
+    }
+
+    #[test]
+    fn write_verified_does_not_decrement_unverified_for_new_entry() {
+        let dir = tmp();
+        let store = SnapshotStore::new(&dir);
+        // write_verified on a name never write_unverified-d (promotes a fresh name).
+        store.write_verified("fresh").unwrap();
+        assert_eq!(store.status("fresh").unwrap(), Status::Verified);
+        assert_eq!(store.unverified_count().unwrap(), 0);
     }
 }

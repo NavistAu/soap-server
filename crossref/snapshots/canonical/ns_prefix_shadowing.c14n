@@ -1,0 +1,1 @@
+<n1:Envelope xmlns:n1="http://www.w3.org/2003/05/soap-envelope"><n1:Body><n0:EchoResponse xmlns:n0="http://crossref.example/controlled"><n0:Text>ns_prefix_shadowing</n0:Text></n0:EchoResponse></n1:Body></n1:Envelope>

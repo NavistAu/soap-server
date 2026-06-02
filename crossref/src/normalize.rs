@@ -233,6 +233,13 @@ pub fn canonicalize_prefixes(xml: &[u8]) -> Result<Vec<u8>, String> {
                 out.extend_from_slice(cd.as_ref());
                 out.extend_from_slice(b"]]>");
             }
+            // Re-emit entity references verbatim so the oracle C14N can normalise them.
+            // Without this, &apos; / &lt; / etc. in element text are silently dropped.
+            (_, Event::GeneralRef(ref r)) => {
+                out.push(b'&');
+                out.extend_from_slice(r.as_ref());
+                out.push(b';');
+            }
             (_, Event::Eof) => break,
             _ => {}
         }
@@ -492,6 +499,9 @@ fn apply_masks(
     reader.config_mut().trim_text(false);
     let mut writer = Writer::new(Cursor::new(Vec::new()));
     let mut stack: Vec<String> = Vec::new();
+    // Whether we have already written the __MASKED__ sentinel for the current
+    // masked element's content. Reset on every End tag at a masked path.
+    let mut sentinel_written = false;
     let mut buf = Vec::new();
 
     loop {
@@ -503,25 +513,33 @@ fn apply_masks(
                 let lname = local_name(e);
                 stack.push(lname);
                 write_masked_start(&mut writer, e, &stack, attr_masks, false)?;
+                // Entering a new element resets the sentinel flag.
+                sentinel_written = false;
             }
             Event::Empty(ref e) => {
                 let lname = local_name(e);
                 stack.push(lname.clone());
                 write_masked_start(&mut writer, e, &stack, attr_masks, true)?;
                 stack.pop();
+                sentinel_written = false;
             }
             Event::End(ref e) => {
                 writer
                     .write_event(Event::End(e.to_owned()))
                     .map_err(|err| err.to_string())?;
                 stack.pop();
+                sentinel_written = false;
             }
             Event::Text(ref t) => {
-                let masked = text_masks.iter().any(|m| m.matches(&stack));
-                if masked {
-                    writer
-                        .write_event(Event::Text(BytesText::new(MASK_SENTINEL)))
-                        .map_err(|err| err.to_string())?;
+                let at_masked = text_masks.iter().any(|m| m.matches(&stack));
+                if at_masked {
+                    if !sentinel_written {
+                        writer
+                            .write_event(Event::Text(BytesText::new(MASK_SENTINEL)))
+                            .map_err(|err| err.to_string())?;
+                        sentinel_written = true;
+                    }
+                    // Subsequent Text/GeneralRef/CData events in this element are dropped.
                 } else {
                     writer
                         .write_event(Event::Text(t.to_owned()))
@@ -529,14 +547,29 @@ fn apply_masks(
                 }
             }
             Event::CData(ref cd) => {
-                let masked = text_masks.iter().any(|m| m.matches(&stack));
-                if masked {
-                    writer
-                        .write_event(Event::Text(BytesText::new(MASK_SENTINEL)))
-                        .map_err(|err| err.to_string())?;
+                let at_masked = text_masks.iter().any(|m| m.matches(&stack));
+                if at_masked {
+                    if !sentinel_written {
+                        writer
+                            .write_event(Event::Text(BytesText::new(MASK_SENTINEL)))
+                            .map_err(|err| err.to_string())?;
+                        sentinel_written = true;
+                    }
                 } else {
                     writer
                         .write_event(Event::CData(cd.to_owned()))
+                        .map_err(|err| err.to_string())?;
+                }
+            }
+            // Entity refs within a masked element must be suppressed so they don't
+            // leak between __MASKED__ sentinels (e.g. &apos; in fault reason text).
+            Event::GeneralRef(ref r) => {
+                let at_masked = text_masks.iter().any(|m| m.matches(&stack));
+                if at_masked {
+                    // Drop entity refs at masked paths (the whole content is replaced by sentinel).
+                } else {
+                    writer
+                        .write_event(Event::GeneralRef(r.to_owned()))
                         .map_err(|err| err.to_string())?;
                 }
             }

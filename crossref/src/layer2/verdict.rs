@@ -17,6 +17,9 @@ pub enum Verdict {
     /// The normalized outputs differ, but this divergence is listed in
     /// `Eval::known_divergences` for this scenario.
     KnownDivergence(String),
+    /// The harness itself failed (HTTP error, oracle error, etc.) — not a SUT verdict.
+    /// Never counts as pass; the scenario must be re-run.
+    HarnessError(String),
 }
 
 /// Input to `evaluate`: the normalized bytes from each side, plus metadata.
