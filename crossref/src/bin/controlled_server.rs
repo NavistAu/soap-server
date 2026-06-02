@@ -9,7 +9,7 @@
 //!   /soap/a + /soap/b — multi-service WSDL (ServiceA + ServiceB from multi_service.wsdl)
 
 use bytes::Bytes;
-use crossref::handlers::{echo_handler, echo_named_handler};
+use crossref::handlers::{echo_handler, echo_named_handler, faulty_handler};
 use soap_server::{FnHandler, ServerBuilder};
 
 const CONTROLLED_WSDL: &[u8] = include_bytes!("../../fixtures/controlled.wsdl");
@@ -22,6 +22,7 @@ async fn main() {
         .path("/soap")
         .handler("Echo", echo_handler())
         .handler("EchoNamed", echo_named_handler())
+        .handler("Faulty", faulty_handler())
         .build()
         .expect("controlled service must build");
 
@@ -30,6 +31,7 @@ async fn main() {
         .path("/soapsec")
         .handler("Echo", echo_handler())
         .handler("EchoNamed", echo_named_handler())
+        .handler("Faulty", faulty_handler())
         .auth(|user| (user == "alice").then(|| "secret".to_string()))
         .timestamp_tolerance_secs(3_153_600_000)
         .build()
@@ -40,6 +42,7 @@ async fn main() {
         .path("/soapsec-strict")
         .handler("Echo", echo_handler())
         .handler("EchoNamed", echo_named_handler())
+        .handler("Faulty", faulty_handler())
         .auth(|user| (user == "alice").then(|| "secret".to_string()))
         .timestamp_tolerance_secs(300)
         .build()

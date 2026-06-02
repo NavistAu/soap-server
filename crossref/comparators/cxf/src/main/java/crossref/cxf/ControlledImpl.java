@@ -6,6 +6,7 @@ import jakarta.jws.WebService;
 import jakarta.xml.ws.Holder;
 import jakarta.xml.ws.soap.SOAPFaultException;
 import jakarta.xml.soap.*;
+import javax.xml.namespace.QName;
 
 /**
  * Deterministic WSDL-first implementation of the ControlledPort SEI.
@@ -31,6 +32,31 @@ public class ControlledImpl implements ControlledPort {
             throw senderFault("required element 'Value' is missing");
         }
         // echo: value stays as-is (in-out holder, already set to the input)
+    }
+
+    @Override
+    public String faulty(String trigger) {
+        // Always throws a Sender fault with a raw XML detail child:
+        // <c:ErrorInfo xmlns:c="http://crossref.example/controlled">
+        //   <c:Field>missing-text</c:Field>
+        // </c:ErrorInfo>
+        try {
+            SOAPFault f = SOAPFactory.newInstance(SOAPConstants.SOAP_1_2_PROTOCOL).createFault();
+            f.setFaultCode(new QName(
+                "http://www.w3.org/2003/05/soap-envelope", "Sender", "env"));
+            f.setFaultString("operation failed");
+
+            Detail detail = f.addDetail();
+            String controlledNs = "http://crossref.example/controlled";
+            DetailEntry entry = detail.addDetailEntry(new QName(controlledNs, "ErrorInfo", "c"));
+            entry.addNamespaceDeclaration("c", controlledNs);
+            SOAPElement field = entry.addChildElement(new QName(controlledNs, "Field", "c"));
+            field.setTextContent("missing-text");
+
+            throw new SOAPFaultException(f);
+        } catch (SOAPException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     private SOAPFaultException senderFault(String reason) {

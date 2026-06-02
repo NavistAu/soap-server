@@ -5,7 +5,7 @@ use axum_test::TestServer;
 use bytes::Bytes;
 use soap_server::{FnHandler, ServerBuilder};
 
-use crate::handlers::{echo_handler, echo_named_handler};
+use crate::handlers::{echo_handler, echo_named_handler, faulty_handler};
 
 pub const CONTROLLED_WSDL: &[u8] = include_bytes!("../fixtures/controlled.wsdl");
 pub const MULTI_SERVICE_WSDL: &[u8] = include_bytes!("../fixtures/multi_service.wsdl");
@@ -73,6 +73,7 @@ fn controlled_base() -> ServerBuilder {
         .path("/soap")
         .handler("Echo", echo_handler())
         .handler("EchoNamed", echo_named_handler())
+        .handler("Faulty", faulty_handler())
 }
 
 pub fn build_controlled_sut() -> Sut {

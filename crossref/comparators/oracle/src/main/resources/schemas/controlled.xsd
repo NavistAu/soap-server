@@ -28,4 +28,16 @@
     </xs:sequence></xs:complexType>
   </xs:element>
 
+  <!-- Faulty operation elements (§10 raw_xml_child conformance scenario) -->
+  <xs:element name="Faulty">
+    <xs:complexType><xs:sequence>
+      <xs:element name="Trigger" type="xs:string" minOccurs="0"/>
+    </xs:sequence></xs:complexType>
+  </xs:element>
+  <xs:element name="FaultyResponse">
+    <xs:complexType><xs:sequence>
+      <xs:element name="Result" type="xs:string" minOccurs="0"/>
+    </xs:sequence></xs:complexType>
+  </xs:element>
+
 </xs:schema>

@@ -25,6 +25,18 @@
           <xs:element minOccurs="1" name="Value" type="xs:string"/>
         </xs:sequence></xs:complexType>
       </xs:element>
+
+      <!-- Faulty operation: always returns a SOAP fault with a raw XML detail child -->
+      <xs:element name="Faulty">
+        <xs:complexType><xs:sequence>
+          <xs:element minOccurs="0" name="Trigger" type="xs:string"/>
+        </xs:sequence></xs:complexType>
+      </xs:element>
+      <xs:element name="FaultyResponse">
+        <xs:complexType><xs:sequence>
+          <xs:element minOccurs="0" name="Result" type="xs:string"/>
+        </xs:sequence></xs:complexType>
+      </xs:element>
     </xs:schema>
   </wsdl:types>
 
@@ -32,6 +44,8 @@
   <wsdl:message name="EchoResponse"><wsdl:part element="tns:EchoResponse" name="parameters"/></wsdl:message>
   <wsdl:message name="EchoNamedRequest"><wsdl:part element="tns:EchoNamed" name="parameters"/></wsdl:message>
   <wsdl:message name="EchoNamedResponse"><wsdl:part element="tns:EchoNamedResponse" name="parameters"/></wsdl:message>
+  <wsdl:message name="FaultyRequest"><wsdl:part element="tns:Faulty" name="parameters"/></wsdl:message>
+  <wsdl:message name="FaultyResponse"><wsdl:part element="tns:FaultyResponse" name="parameters"/></wsdl:message>
 
   <wsdl:portType name="ControlledPort">
     <wsdl:operation name="Echo">
@@ -41,6 +55,10 @@
     <wsdl:operation name="EchoNamed">
       <wsdl:input message="tns:EchoNamedRequest"/>
       <wsdl:output message="tns:EchoNamedResponse"/>
+    </wsdl:operation>
+    <wsdl:operation name="Faulty">
+      <wsdl:input message="tns:FaultyRequest"/>
+      <wsdl:output message="tns:FaultyResponse"/>
     </wsdl:operation>
   </wsdl:portType>
 
@@ -53,6 +71,11 @@
     </wsdl:operation>
     <wsdl:operation name="EchoNamed">
       <soap:operation soapAction="http://crossref.example/controlled/EchoNamed"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="Faulty">
+      <soap:operation soapAction="http://crossref.example/controlled/Faulty"/>
       <wsdl:input><soap:body use="literal"/></wsdl:input>
       <wsdl:output><soap:body use="literal"/></wsdl:output>
     </wsdl:operation>

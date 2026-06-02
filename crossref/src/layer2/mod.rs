@@ -8,7 +8,7 @@ pub mod verdict;
 
 use crate::normalize::{mask_only, mask_only_with_drops, AttrMaskRule, MaskRule};
 use crate::oracle::Oracle;
-use crate::scenario::{Outcome, Scenario, SoapVersion};
+use crate::scenario::{DetailPolicy, Outcome, Scenario, SoapVersion};
 use crate::snapshot::SnapshotStore;
 use promote::promote;
 use report::Report;
@@ -115,6 +115,8 @@ const IN_SCOPE: &[&str] = &[
     // Phase 1c: WSDL-rewrite scenarios (oracle WSDL-schema validity + invariant)
     "wsdl_rewrite_single",
     "wsdl_rewrite_multi",
+    // §10 raw-XML-detail conformance scenario (Finding #4 / fdx-T2)
+    "raw_xml_child",
 ];
 
 /// Drive all in-scope conformance scenarios, return the verdict report.
@@ -346,6 +348,41 @@ fn run_scenario(
             "our HTTP status {our_status} != declared expected_status {}",
             scenario.expected_status
         ));
+    }
+
+    // 8b. Fault assertion enforcement (Finding #4 / fdx-T2).
+    //
+    // For fault scenarios with a [fault] block:
+    //   - fault.code: assert our response's Code/Value local part == declared code.
+    //   - detail_policy == "raw_xml_child": assert our <Detail> contains a child ELEMENT
+    //     (raw '<' not '&lt;' as the first non-whitespace inside Detail).
+    if scenario.outcome == Outcome::Fault {
+        if let Some(ref fault_expect) = scenario.fault {
+            // Check fault code: extract the Value local part from our response.
+            if let Some(verdict) = enforce_fault_code(
+                &our_body,
+                &fault_expect.code,
+                name,
+                scenario.soap_version == SoapVersion::V11,
+            ) {
+                return verdict;
+            }
+
+            // Check detail_policy.
+            match fault_expect.detail_policy {
+                DetailPolicy::RawXmlChild => {
+                    if let Some(verdict) = enforce_raw_xml_child_detail(&our_body, name) {
+                        return verdict;
+                    }
+                }
+                DetailPolicy::Absent => {
+                    // detail must be absent — not enforced at this layer (oracle schema covers it)
+                }
+                DetailPolicy::Present => {
+                    // detail must be present (text) — not enforced at this layer
+                }
+            }
+        }
     }
 
     // Evaluate verdict using existing evaluate() with Result-based Eval.
@@ -828,6 +865,178 @@ fn get_bytes(url: &str) -> Result<Vec<u8>, String> {
         ));
     }
     Ok(bytes)
+}
+
+/// Enforce that our fault response's Code/Value local part matches `declared_code`.
+///
+/// For SOAP 1.2: extracts the text of `env:Value` inside `env:Code` and compares
+/// the local part (after the colon) to `declared_code` (e.g. "Sender").
+/// For SOAP 1.1: extracts `faultcode` text, strips the prefix, and compares.
+/// Returns `Some(SutFail)` on mismatch, `None` if the code matches or cannot be extracted.
+fn enforce_fault_code(
+    body: &[u8],
+    declared_code: &str,
+    scenario_name: &str,
+    is_soap11: bool,
+) -> Option<Verdict> {
+    use quick_xml::events::Event;
+    use quick_xml::Reader;
+
+    let mut reader = Reader::from_reader(body);
+    reader.config_mut().trim_text(true);
+
+    // For SOAP 1.2: look for the text inside <env:Value> (child of <env:Code>).
+    // For SOAP 1.1: look for the text inside <faultcode>.
+    let target_suffix: &[u8] = if is_soap11 { b"faultcode" } else { b"Value" };
+
+    let mut in_code_parent = false; // tracks <env:Code> for SOAP 1.2 nesting
+    let mut in_value = false;
+    let mut accumulated = String::new();
+
+    loop {
+        match reader.read_event() {
+            Ok(Event::Start(ref e)) => {
+                let name_bytes = e.name().as_ref().to_vec();
+                let local_start = name_bytes
+                    .iter()
+                    .rposition(|&b| b == b':')
+                    .map(|i| i + 1)
+                    .unwrap_or(0);
+                let local = &name_bytes[local_start..];
+
+                if !is_soap11 {
+                    // SOAP 1.2: only capture Value inside Code (avoid capturing Subcode/Value)
+                    if local == b"Code" {
+                        in_code_parent = true;
+                    } else if local == b"Value" && in_code_parent {
+                        in_value = true;
+                        accumulated.clear();
+                    }
+                } else if local == target_suffix {
+                    in_value = true;
+                    accumulated.clear();
+                }
+            }
+            Ok(Event::Text(ref t)) if in_value => {
+                accumulated.push_str(&t.decode().unwrap_or_default());
+            }
+            Ok(Event::End(ref e)) => {
+                let name_bytes = e.name().as_ref().to_vec();
+                let local_start = name_bytes
+                    .iter()
+                    .rposition(|&b| b == b':')
+                    .map(|i| i + 1)
+                    .unwrap_or(0);
+                let local = &name_bytes[local_start..];
+
+                if in_value && local == target_suffix {
+                    // accumulated holds the full code text, e.g. "env:Sender" or "SOAP-ENV:Client"
+                    let code_text = accumulated.trim().to_string();
+                    // Extract the local part (after the colon, or the whole thing).
+                    let local_part = code_text
+                        .rfind(':')
+                        .map(|i| &code_text[i + 1..])
+                        .unwrap_or(&code_text);
+                    if local_part != declared_code {
+                        return Some(Verdict::SutFail(format!(
+                            "[{scenario_name}] fault code mismatch: our code '{code_text}' \
+                             local='{local_part}', declared='{declared_code}'"
+                        )));
+                    }
+                    return None; // code matches — no fault
+                }
+                if !is_soap11 && local == b"Code" {
+                    in_code_parent = false;
+                }
+            }
+            Ok(Event::Eof) => break,
+            Err(_) => break,
+            _ => {}
+        }
+    }
+    // Could not extract the code — don't block the verdict (schema validation covers structure)
+    None
+}
+
+/// Enforce that the fault `<Detail>` contains a raw XML child ELEMENT (not escaped text).
+///
+/// Parses the body and locates the `Detail` element. The first non-whitespace character
+/// inside must be `<` (a child element start), NOT `&lt;` (escaped). If the detail
+/// contains no child element or is absent, returns `Some(SutFail)`.
+fn enforce_raw_xml_child_detail(body: &[u8], scenario_name: &str) -> Option<Verdict> {
+    use quick_xml::events::Event;
+    use quick_xml::Reader;
+
+    let mut reader = Reader::from_reader(body);
+    reader.config_mut().trim_text(false); // keep whitespace so we can detect structure
+
+    let mut in_detail = false;
+    let mut found_child_element = false;
+    let mut found_escaped_text = false;
+    let mut detail_seen = false;
+
+    loop {
+        match reader.read_event() {
+            Ok(Event::Start(ref e)) => {
+                let name_bytes = e.name().as_ref().to_vec();
+                let local_start = name_bytes
+                    .iter()
+                    .rposition(|&b| b == b':')
+                    .map(|i| i + 1)
+                    .unwrap_or(0);
+                let local = &name_bytes[local_start..];
+
+                if local == b"Detail" {
+                    in_detail = true;
+                    detail_seen = true;
+                } else if in_detail {
+                    // A child element inside Detail — this is what we want.
+                    found_child_element = true;
+                }
+            }
+            Ok(Event::Text(ref t)) if in_detail => {
+                // If there's text that looks like escaped XML (contains &lt;), that's a failure.
+                let text = t.decode().unwrap_or_default();
+                if text.contains("&lt;") || text.trim().starts_with('<') {
+                    // Note: quick_xml decodes entities, so if the *parsed* text starts with '<'
+                    // it means it was originally escaped as '&lt;' in the source.
+                    found_escaped_text = true;
+                }
+            }
+            Ok(Event::End(ref e)) => {
+                let name_bytes = e.name().as_ref().to_vec();
+                let local_start = name_bytes
+                    .iter()
+                    .rposition(|&b| b == b':')
+                    .map(|i| i + 1)
+                    .unwrap_or(0);
+                let local = &name_bytes[local_start..];
+                if local == b"Detail" {
+                    in_detail = false;
+                }
+            }
+            Ok(Event::Eof) => break,
+            Err(_) => break,
+            _ => {}
+        }
+    }
+
+    if !detail_seen {
+        return Some(Verdict::SutFail(format!(
+            "[{scenario_name}] raw_xml_child: <Detail> element absent in our fault response"
+        )));
+    }
+    if found_escaped_text {
+        return Some(Verdict::SutFail(format!(
+            "[{scenario_name}] raw_xml_child: <Detail> contains escaped XML text (expected raw child element)"
+        )));
+    }
+    if !found_child_element {
+        return Some(Verdict::SutFail(format!(
+            "[{scenario_name}] raw_xml_child: <Detail> has no child element (detail_policy requires raw XML child)"
+        )));
+    }
+    None // passed
 }
 
 /// POST XML bytes to `url` with the given Content-Type header.

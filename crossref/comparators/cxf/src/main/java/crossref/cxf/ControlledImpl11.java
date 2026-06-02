@@ -6,6 +6,7 @@ import jakarta.jws.WebService;
 import jakarta.xml.ws.Holder;
 import jakarta.xml.ws.soap.SOAPFaultException;
 import jakarta.xml.soap.*;
+import javax.xml.namespace.QName;
 
 /**
  * SOAP 1.1 implementation of ControlledPort. Raises proper SOAP 1.1 faults
@@ -32,6 +33,13 @@ public class ControlledImpl11 implements ControlledPort {
             throw senderFault("required element 'Value' is missing");
         }
         // echo: value stays as-is (in-out holder, already set to the input)
+    }
+
+    @Override
+    public String faulty(String trigger) {
+        // Always throws a SOAP 1.1 Sender fault. Nominally not exercised by the
+        // raw_xml_child scenario (which uses SOAP 1.2), but the SEI requires it.
+        throw senderFault("operation failed");
     }
 
     private SOAPFaultException senderFault(String reason) {

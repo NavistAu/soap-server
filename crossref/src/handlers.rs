@@ -90,3 +90,15 @@ pub fn echo_named_handler() -> impl soap_server::SoapHandler {
         Ok::<Bytes, soap_server::SoapFault>(Bytes::from(resp))
     })
 }
+
+/// Handler for the `Faulty` operation. Always returns a Sender fault whose
+/// `<env:Detail>` contains a raw XML child element (not escaped text).
+pub fn faulty_handler() -> impl soap_server::SoapHandler {
+    FnHandler::new(|_body: Bytes| async move {
+        Err::<Bytes, soap_server::SoapFault>(
+            soap_server::SoapFault::sender("operation failed").with_detail_xml(
+                r#"<c:ErrorInfo xmlns:c="http://crossref.example/controlled"><c:Field>missing-text</c:Field></c:ErrorInfo>"#,
+            ),
+        )
+    })
+}

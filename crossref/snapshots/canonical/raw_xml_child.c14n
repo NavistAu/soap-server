@@ -1,0 +1,1 @@
+<n1:Envelope xmlns:n1="http://www.w3.org/2003/05/soap-envelope"><n1:Body><n1:Fault><n1:Code><n1:Value>env:Sender</n1:Value></n1:Code><n1:Reason><n1:Text>__MASKED__</n1:Text></n1:Reason><n1:Detail><n0:ErrorInfo xmlns:n0="http://crossref.example/controlled"><n0:Field>missing-text</n0:Field></n0:ErrorInfo></n1:Detail></n1:Fault></n1:Body></n1:Envelope>
