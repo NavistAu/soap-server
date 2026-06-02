@@ -72,6 +72,7 @@ public class Oracle {
         register(sf, "soap11-envelope", "/schemas/soap11-envelope.xsd");
         register(sf, "soap12-envelope", "/schemas/soap12-envelope.xsd");
         register(sf, "controlled",      "/schemas/controlled.xsd");
+        register(sf, "wsdl11",          "/schemas/wsdl11.xsd");
 
         HttpServer server = HttpServer.create(new InetSocketAddress("0.0.0.0", 8081), 0);
         server.createContext("/healthz", ex -> respond(ex, 200, "ok".getBytes()));
