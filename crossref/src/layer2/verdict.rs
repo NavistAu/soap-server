@@ -100,39 +100,52 @@ pub struct Resp {
 
 /// Evaluate outcome-equivalence for a WS-Security scenario (spec §10).
 ///
-/// Rules:
+/// `declared_success`: the scenario's declared outcome (`Outcome::Success` → true).
+///
+/// Rules (outcome-aware — the declared outcome is the contract anchor):
 /// - our schema-invalid → `SutFail`.
+/// - our outcome ≠ declared → `SutFail` (our server violated its contract; CXF irrelevant).
 /// - ref schema-invalid → `ReferenceDisagreement`.
-/// - both schema-valid AND both success AND equal masked body → `Pass`.
-/// - both schema-valid AND both success AND unequal body → `SutFail` (real diff).
-/// - both schema-valid AND both fault (non-success) → `Pass` (class-equivalence; reason non-asserted).
-/// - one success + one fault → `SutFail` (different outcome).
-pub fn evaluate_outcome_equivalence(our: &Resp, cxf: &Resp) -> Verdict {
+/// - cxf outcome ≠ declared → `ReferenceDisagreement` (scenario needs triage).
+/// - both match declared AND declared success AND equal masked body → `Pass`.
+/// - both match declared AND declared success AND unequal body → `SutFail` (real diff).
+/// - both match declared AND declared fault → `Pass` (class-equivalence; reason non-asserted).
+pub fn evaluate_outcome_equivalence(declared_success: bool, our: &Resp, cxf: &Resp) -> Verdict {
     if !our.schema_valid {
-        return Verdict::SutFail("our response schema-invalid".to_string());
+        return Verdict::SutFail("our response schema-invalid".into());
+    }
+    // Our server MUST honour the scenario's declared outcome (independent of CXF).
+    if our.is_success != declared_success {
+        return Verdict::SutFail(format!(
+            "our server outcome ({}) does not match the scenario's declared outcome ({})",
+            if our.is_success { "success" } else { "fault" },
+            if declared_success { "success" } else { "fault" },
+        ));
     }
     if !cxf.schema_valid {
-        return Verdict::ReferenceDisagreement("CXF response schema-invalid".to_string());
+        return Verdict::ReferenceDisagreement("CXF response schema-invalid".into());
     }
-    match (our.is_success, cxf.is_success) {
-        (true, true) => {
-            if our.masked_body_canon == cxf.masked_body_canon {
-                Verdict::Pass
-            } else {
-                Verdict::SutFail(format!(
-                    "both succeeded but body differs: our={} cxf={}",
-                    String::from_utf8_lossy(&our.masked_body_canon),
-                    String::from_utf8_lossy(&cxf.masked_body_canon),
-                ))
-            }
+    // Conformance: does CXF reach the same (declared, SUT-confirmed) outcome?
+    if cxf.is_success != declared_success {
+        return Verdict::ReferenceDisagreement(format!(
+            "CXF outcome ({}) differs from the declared/SUT outcome ({}) — needs triage",
+            if cxf.is_success { "success" } else { "fault" },
+            if declared_success { "success" } else { "fault" },
+        ));
+    }
+    // Both match the declared outcome.
+    if declared_success {
+        if our.masked_body_canon == cxf.masked_body_canon {
+            Verdict::Pass
+        } else {
+            Verdict::SutFail(format!(
+                "both succeeded but body differs: our={} cxf={}",
+                String::from_utf8_lossy(&our.masked_body_canon),
+                String::from_utf8_lossy(&cxf.masked_body_canon),
+            ))
         }
-        (false, false) => Verdict::Pass, // both rejected — class-equivalence
-        (true, false) => Verdict::SutFail(
-            "our server accepted but CXF rejected (SUT admitted an invalid credential)".to_string(),
-        ),
-        (false, true) => Verdict::SutFail(
-            "our server rejected but CXF accepted (SUT rejected a valid credential)".to_string(),
-        ),
+    } else {
+        Verdict::Pass // both faulted as the scenario declared — class-equivalence
     }
 }
 
@@ -149,6 +162,8 @@ mod tests {
     }
 
     // ─── evaluate_outcome_equivalence unit tests ───────────────────────────────
+    //
+    // All tests pass `declared_success: bool` as the first argument (new 3-arg signature).
 
     fn resp_success(body: &str) -> Resp {
         Resp {
@@ -174,67 +189,102 @@ mod tests {
         }
     }
 
+    // declared_success=true, our success, cxf success, bodies equal → Pass
     #[test]
-    fn oe_both_success_equal_body_is_pass() {
+    fn oe_declared_success_both_success_equal_body_is_pass() {
         let our = resp_success("<body>hi</body>");
         let cxf = resp_success("<body>hi</body>");
-        assert_eq!(evaluate_outcome_equivalence(&our, &cxf), Verdict::Pass);
+        assert_eq!(
+            evaluate_outcome_equivalence(true, &our, &cxf),
+            Verdict::Pass
+        );
     }
 
+    // declared_success=true, our success, cxf success, bodies differ → SutFail
     #[test]
-    fn oe_both_fault_is_pass() {
-        let our = resp_fault();
-        let cxf = resp_fault();
-        assert_eq!(evaluate_outcome_equivalence(&our, &cxf), Verdict::Pass);
-    }
-
-    #[test]
-    fn oe_our_success_cxf_fault_is_sut_fail() {
-        let our = resp_success("<body>hi</body>");
-        let cxf = resp_fault();
+    fn oe_declared_success_both_success_unequal_body_is_sut_fail() {
+        let our = resp_success("<body>A</body>");
+        let cxf = resp_success("<body>B</body>");
         assert!(matches!(
-            evaluate_outcome_equivalence(&our, &cxf),
+            evaluate_outcome_equivalence(true, &our, &cxf),
             Verdict::SutFail(_)
         ));
     }
 
+    // declared_success=true, our fault → SutFail (our server failed its contract, CXF irrelevant)
     #[test]
-    fn oe_our_fault_cxf_success_is_sut_fail() {
+    fn oe_declared_success_our_fault_is_sut_fail_regardless_of_cxf() {
         let our = resp_fault();
         let cxf = resp_success("<body>hi</body>");
         assert!(matches!(
-            evaluate_outcome_equivalence(&our, &cxf),
+            evaluate_outcome_equivalence(true, &our, &cxf),
             Verdict::SutFail(_)
         ));
     }
 
+    // declared_success=true, our success, cxf fault → ReferenceDisagreement (real wssec_digest_success case)
+    #[test]
+    fn oe_declared_success_our_success_cxf_fault_is_reference_disagreement() {
+        let our = resp_success("<body>hi</body>");
+        let cxf = resp_fault();
+        assert!(matches!(
+            evaluate_outcome_equivalence(true, &our, &cxf),
+            Verdict::ReferenceDisagreement(_)
+        ));
+    }
+
+    // declared_fault=true, our fault, cxf fault → Pass (class-equivalence)
+    #[test]
+    fn oe_declared_fault_both_fault_is_pass() {
+        let our = resp_fault();
+        let cxf = resp_fault();
+        assert_eq!(
+            evaluate_outcome_equivalence(false, &our, &cxf),
+            Verdict::Pass
+        );
+    }
+
+    // declared_fault=true, our success → SutFail
+    #[test]
+    fn oe_declared_fault_our_success_is_sut_fail() {
+        let our = resp_success("<body>hi</body>");
+        let cxf = resp_fault();
+        assert!(matches!(
+            evaluate_outcome_equivalence(false, &our, &cxf),
+            Verdict::SutFail(_)
+        ));
+    }
+
+    // declared_fault=true, our fault, cxf success → ReferenceDisagreement
+    #[test]
+    fn oe_declared_fault_our_fault_cxf_success_is_reference_disagreement() {
+        let our = resp_fault();
+        let cxf = resp_success("<body>hi</body>");
+        assert!(matches!(
+            evaluate_outcome_equivalence(false, &our, &cxf),
+            Verdict::ReferenceDisagreement(_)
+        ));
+    }
+
+    // our schema-invalid → SutFail (regardless of declared or cxf)
     #[test]
     fn oe_our_schema_invalid_is_sut_fail() {
         let our = resp_invalid();
         let cxf = resp_fault();
         assert!(matches!(
-            evaluate_outcome_equivalence(&our, &cxf),
+            evaluate_outcome_equivalence(false, &our, &cxf),
             Verdict::SutFail(_)
         ));
     }
 
+    // ref schema-invalid (our is valid and matches declared) → ReferenceDisagreement
     #[test]
     fn oe_ref_schema_invalid_is_reference_disagreement() {
         let our = resp_fault();
         let cxf = resp_invalid();
         assert!(matches!(
-            evaluate_outcome_equivalence(&our, &cxf),
+            evaluate_outcome_equivalence(false, &our, &cxf),
             Verdict::ReferenceDisagreement(_)
-        ));
-    }
-
-    #[test]
-    fn oe_both_success_unequal_body_is_sut_fail() {
-        let our = resp_success("<body>A</body>");
-        let cxf = resp_success("<body>B</body>");
-        assert!(matches!(
-            evaluate_outcome_equivalence(&our, &cxf),
-            Verdict::SutFail(_)
         ));
     }
 

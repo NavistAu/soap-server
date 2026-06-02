@@ -14,7 +14,24 @@ pub struct Topology {
 
 impl Topology {
     /// `docker compose up -d --build` (both -f files), then block until all services are healthy.
+    ///
+    /// Runs `down -v` first (ignoring errors) so every run starts from a guaranteed-clean slate
+    /// regardless of prior leaks (belt: teardown before up; suspenders: Drop runs after exit).
     pub fn up(repo_root: &Path, keep_up: bool) -> Result<Self, String> {
+        // Belt: unconditionally tear down any leftover containers/volumes before starting.
+        // Ignore the error — nothing may be running, which is fine.
+        let _ = run(
+            repo_root,
+            &[
+                "compose",
+                "-f",
+                COMPOSE_FILE,
+                "-f",
+                COMPOSE_LOCAL,
+                "down",
+                "-v",
+            ],
+        );
         run(
             repo_root,
             &[

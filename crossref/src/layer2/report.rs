@@ -67,16 +67,33 @@ impl Report {
             "  {} snapshot(s) still unverified (target: 0 after Phase 1)",
             self.unverified_remaining
         );
-        if self.unverified_remaining == 0 {
+        if self.is_green() && self.unverified_remaining == 0 {
             println!("  ✓ All seed scenarios verified — Phase 1 complete (spec §11.5)");
+        } else if !self.is_green() {
+            let bad = self
+                .rows
+                .iter()
+                .filter(|(_, v)| {
+                    matches!(
+                        v,
+                        Verdict::SutFail(_)
+                            | Verdict::HarnessError(_)
+                            | Verdict::ReferenceDisagreement(_)
+                    )
+                })
+                .count();
+            println!("  ✗ run has {bad} Fail/Error verdict(s) — NOT release-green");
         }
     }
 
-    /// Returns false if any SutFail or HarnessError is present (spec §11.5 green gate).
+    /// Returns true only when every verdict is Pass or KnownDivergence (spec §11.5 green gate).
+    ///
+    /// SutFail, HarnessError, AND ReferenceDisagreement all make the run non-green:
+    /// a ReferenceDisagreement means the scenario is NOT verified and requires triage
+    /// before a release decision can be made.
     pub fn is_green(&self) -> bool {
-        !self
-            .rows
+        self.rows
             .iter()
-            .any(|(_, v)| matches!(v, Verdict::SutFail(_) | Verdict::HarnessError(_)))
+            .all(|(_, v)| matches!(v, Verdict::Pass | Verdict::KnownDivergence(_)))
     }
 }

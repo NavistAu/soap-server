@@ -339,7 +339,16 @@ fn run_scenario(
         Err(e) => return Verdict::HarnessError(format!("oracle c14n cxf: {e}")),
     };
 
-    // 8. Evaluate verdict using existing evaluate() with Result-based Eval.
+    // 8. Enforce declared expected_status on our server (Finding #4 — was parsed but never
+    //    checked in the regular conformance path).
+    if our_status != scenario.expected_status {
+        return Verdict::SutFail(format!(
+            "our HTTP status {our_status} != declared expected_status {}",
+            scenario.expected_status
+        ));
+    }
+
+    // Evaluate verdict using existing evaluate() with Result-based Eval.
     let our_result: Result<Vec<u8>, String> = if our_valid {
         Ok(our_canon.clone())
     } else {
@@ -511,6 +520,16 @@ fn run_wssec_scenario(
     };
 
     // 8. Build Resp structs and evaluate outcome-equivalence.
+    // Enforce expected_status on our server (Finding #4 / Bug 2 — expected_status was parsed
+    // but never checked in the WS-Security path).
+    if our_status != scenario.expected_status {
+        return Verdict::SutFail(format!(
+            "our HTTP status {our_status} != declared expected_status {}",
+            scenario.expected_status
+        ));
+    }
+
+    let declared_success = scenario.outcome == crate::scenario::Outcome::Success;
     let our_resp = Resp {
         schema_valid: our_valid,
         is_success: our_is_success,
@@ -522,7 +541,7 @@ fn run_wssec_scenario(
         masked_body_canon: cxf_body_canon,
     };
 
-    let v = verdict::evaluate_outcome_equivalence(&our_resp, &cxf_resp);
+    let v = verdict::evaluate_outcome_equivalence(declared_success, &our_resp, &cxf_resp);
 
     eprintln!("[{name}] verdict: {v:?}");
 

@@ -42,7 +42,7 @@ fn main() {
          scenarios={scenarios_filter:?}, interop={run_interop})"
     );
 
-    let _topo = match Topology::up(root, keep_up) {
+    let topo = match Topology::up(root, keep_up) {
         Ok(t) => t,
         Err(e) => {
             eprintln!("FATAL: topology up failed: {e}");
@@ -70,5 +70,10 @@ fn main() {
 
     report.print();
 
-    std::process::exit(if report.is_green() { 0 } else { 1 });
+    // Suspenders: explicitly drop the topology (runs docker compose down -v via Drop)
+    // BEFORE std::process::exit, which skips destructors. This ensures containers are
+    // always torn down on a normal run, even if --keep-up was not passed.
+    let exit_code = if report.is_green() { 0 } else { 1 };
+    drop(topo);
+    std::process::exit(exit_code);
 }
