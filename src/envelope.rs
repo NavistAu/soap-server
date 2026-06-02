@@ -34,7 +34,10 @@ pub fn parse_envelope(input: &[u8]) -> Result<ParsedEnvelope, SoapFault> {
     const SOAP11_NS: &[u8] = b"http://schemas.xmlsoap.org/soap/envelope/";
 
     let mut reader = NsReader::from_reader(input);
-    reader.config_mut().trim_text(true);
+    // Do NOT trim text — significant whitespace and entity-reference fragments
+    // (emitted as separate Text events by quick-xml) must be preserved so that
+    // text content like `&lt;hello&gt; &amp; world` round-trips faithfully.
+    // Whitespace-only text nodes between elements are harmless in the raw bytes.
 
     // Step 1: Find the Envelope start element
     let soap_version;
@@ -339,6 +342,15 @@ fn collect_header_children(
                     current_buf.extend_from_slice(t.as_ref());
                 }
             }
+            (_, Event::GeneralRef(r)) => {
+                if depth > 0 {
+                    // Re-emit entity reference as &name; so text content is
+                    // preserved faithfully (e.g. &lt; stays as &lt; in the bytes).
+                    current_buf.extend_from_slice(b"&");
+                    current_buf.extend_from_slice(r.as_ref());
+                    current_buf.extend_from_slice(b";");
+                }
+            }
             _ => {}
         }
     }
@@ -458,6 +470,13 @@ fn extract_body_first_child(
                         }
                         (_, Event::Text(t)) => {
                             buf.extend_from_slice(t.as_ref());
+                        }
+                        (_, Event::GeneralRef(r)) => {
+                            // Re-emit entity reference as &name; so text content is
+                            // preserved faithfully (e.g. &lt; stays as &lt; in the bytes).
+                            buf.extend_from_slice(b"&");
+                            buf.extend_from_slice(r.as_ref());
+                            buf.extend_from_slice(b";");
                         }
                         _ => {}
                     }
@@ -648,6 +667,37 @@ mod tests {
             body_str.contains("xmlns:tds")
                 && body_str.contains("http://www.onvif.org/ver10/device/wsdl"),
             "body_element should contain tds namespace declaration, got: {body_str}"
+        );
+    }
+
+    #[test]
+    fn parse_envelope_body_preserves_entity_refs_and_whitespace() {
+        // Regression: parse_envelope previously set trim_text(true) and had no
+        // GeneralRef arm, so quick-xml's entity-reference events (&lt; &amp; etc.)
+        // were dropped and significant whitespace between fragments was eaten —
+        // silently corrupting body text content. The extracted body bytes must
+        // preserve entity references and whitespace verbatim.
+        let xml = r#"<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope"><env:Body><op:Echo xmlns:op="urn:test"><op:Text>&lt;hello&gt; &amp; &apos;world&apos;</op:Text></op:Echo></env:Body></env:Envelope>"#;
+        let parsed = parse_envelope(xml.as_bytes()).unwrap();
+        let body = std::str::from_utf8(&parsed.body_element).unwrap();
+        assert!(body.contains("&lt;hello&gt;"), "entity refs lost: {body}");
+        assert!(body.contains("&amp;"), "ampersand entity lost: {body}");
+        assert!(
+            body.contains("&gt; &amp; &apos;"),
+            "significant whitespace around entities lost: {body}"
+        );
+    }
+
+    #[test]
+    fn parse_envelope_header_child_preserves_entity_refs() {
+        // Regression: collect_header_children dropped GeneralRef entity events.
+        let xml = r#"<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope"><env:Header><h:Tok xmlns:h="urn:h">a &amp; b</h:Tok></env:Header><env:Body><op:Echo xmlns:op="urn:test"/></env:Body></env:Envelope>"#;
+        let parsed = parse_envelope(xml.as_bytes()).unwrap();
+        assert_eq!(parsed.header_children.len(), 1);
+        let header = std::str::from_utf8(&parsed.header_children[0]).unwrap();
+        assert!(
+            header.contains("a &amp; b"),
+            "header entity/whitespace lost: {header}"
         );
     }
 
