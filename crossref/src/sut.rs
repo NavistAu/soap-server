@@ -63,14 +63,33 @@ impl Sut {
     }
 }
 
+/// Resolve a standard XML predefined entity name to its character.
+/// Returns `None` for unrecognised entity names (caller appends nothing).
+fn resolve_predefined_entity(name: &str) -> Option<char> {
+    match name {
+        "lt" => Some('<'),
+        "gt" => Some('>'),
+        "amp" => Some('&'),
+        "apos" => Some('\''),
+        "quot" => Some('"'),
+        _ => None,
+    }
+}
+
 /// Extract the text content of the first element whose local name ends with `suffix`.
+///
+/// Accumulates all `Event::Text` and `Event::GeneralRef` fragments between the
+/// target element's `Start` and its matching `End`, preserving significant
+/// whitespace and faithfully decoding entity references (e.g. `&lt;` → `<`).
 fn extract_first_text_by_suffix(body: &[u8], suffix: &str) -> Option<String> {
     use quick_xml::events::Event;
     use quick_xml::Reader;
 
     let mut reader = Reader::from_reader(body);
-    reader.config_mut().trim_text(true);
+    // Do NOT trim — whitespace inside element content is significant.
+    reader.config_mut().trim_text(false);
     let mut in_target = false;
+    let mut accumulated = String::new();
     loop {
         match reader.read_event() {
             Ok(Event::Start(e)) => {
@@ -78,12 +97,22 @@ fn extract_first_text_by_suffix(body: &[u8], suffix: &str) -> Option<String> {
                 let local_str = std::str::from_utf8(local.as_ref()).unwrap_or("");
                 if local_str.ends_with(suffix) {
                     in_target = true;
+                    accumulated.clear();
                 }
             }
             Ok(Event::Text(t)) if in_target => {
-                return Some(t.decode().unwrap_or_default().into_owned());
+                accumulated.push_str(&t.decode().unwrap_or_default());
             }
-            Ok(Event::End(_)) if in_target => return None,
+            Ok(Event::GeneralRef(r)) if in_target => {
+                let name = r.decode().unwrap_or_default();
+                if let Some(ch) = resolve_predefined_entity(name.as_ref()) {
+                    accumulated.push(ch);
+                }
+                // Unrecognised entity: append nothing (safe degradation).
+            }
+            Ok(Event::End(_)) if in_target => {
+                return Some(accumulated);
+            }
             Ok(Event::Eof) => return None,
             Err(_) => return None,
             _ => {}
@@ -231,5 +260,36 @@ mod tests {
         assert_eq!(resp.status, 500);
         assert!(resp.body_utf8().contains("Fault"));
         assert!(resp.body_utf8().contains("required element"));
+    }
+
+    /// Special-characters round-trip: the echo handler must faithfully reconstruct
+    /// decoded text (with spaces and entity-encoded chars) and re-escape it in the
+    /// response. Input Text decodes to `<a> & 'b'`; the response must re-escape that
+    /// back to `&lt;a&gt; &amp; &apos;b&apos;`.
+    #[tokio::test]
+    async fn echo_special_chars_round_trips() {
+        let sut = build_controlled_sut();
+        // Text content: &lt;a&gt; &amp; &apos;b&apos;  →  decoded: <a> & 'b'
+        let body = br#"<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope"><env:Body><c:Echo xmlns:c="http://crossref.example/controlled"><c:Text>&lt;a&gt; &amp; &apos;b&apos;</c:Text></c:Echo></env:Body></env:Envelope>"#;
+        let resp = sut
+            .replay("/soap", body, "application/soap+xml; charset=utf-8")
+            .await;
+        assert_eq!(resp.status, 200);
+        let body_str = resp.body_utf8();
+        // The response must contain the faithfully re-escaped value.
+        assert!(
+            body_str.contains("&lt;a&gt;"),
+            "expected re-escaped '<a>' in response, got: {body_str}"
+        );
+        assert!(
+            body_str.contains("&amp;"),
+            "expected re-escaped '&' in response, got: {body_str}"
+        );
+        // Verify the decoded echoed value equals the original decoded text.
+        let echoed = extract_text(body_str.as_bytes()).expect("Text element must be present");
+        assert_eq!(
+            echoed, "<a> & 'b'",
+            "decoded echo value must round-trip to original"
+        );
     }
 }

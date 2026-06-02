@@ -69,6 +69,19 @@ async fn replay_all_scenarios() {
         let normalized = normalize(&resp.body, &masks)
             .unwrap_or_else(|e| panic!("{}: normalize failed: {e}", sc.name));
 
+        // Fault-presence guard: a scenario marked outcome=Fault must produce a
+        // response containing "Fault" so a silent regression is caught immediately.
+        // sc.fault.code / sc.fault.detail_policy are reserved for the Phase 1b
+        // validator (§5.6) and are intentionally NOT asserted in Phase 1a beyond
+        // this presence check.
+        if sc.outcome == crossref::scenario::Outcome::Fault {
+            assert!(
+                normalized.contains("Fault"),
+                "{}: outcome=Fault but response contains no 'Fault' element",
+                sc.name
+            );
+        }
+
         match store.read(&sc.name) {
             None => {
                 assert!(
