@@ -1,0 +1,67 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+
+<!--
+  Schema for the SOAP 1.1 Envelope
+  Source: http://schemas.xmlsoap.org/soap/envelope/
+  Vendored for offline use. Used by deferred SOAP 1.1 scenarios (Phase 1c).
+-->
+
+<xs:schema xmlns:xs='http://www.w3.org/2001/XMLSchema'
+           xmlns:tns='http://schemas.xmlsoap.org/soap/envelope/'
+           targetNamespace='http://schemas.xmlsoap.org/soap/envelope/' >
+
+  <!-- Envelope, header and body -->
+  <xs:element name="Envelope" type="tns:Envelope" />
+  <xs:complexType name="Envelope" >
+    <xs:sequence>
+      <xs:element ref="tns:Header" minOccurs="0" />
+      <xs:element ref="tns:Body" minOccurs="1" />
+    </xs:sequence>
+    <xs:anyAttribute namespace="##other" />
+  </xs:complexType>
+
+  <xs:element name="Header" type="tns:Header" />
+  <xs:complexType name="Header" >
+    <xs:sequence>
+      <xs:any namespace="##other" minOccurs="0" maxOccurs="unbounded" processContents="lax" />
+    </xs:sequence>
+    <xs:anyAttribute namespace="##other" />
+  </xs:complexType>
+
+  <xs:element name="Body" type="tns:Body" />
+  <xs:complexType name="Body" >
+    <xs:sequence>
+      <xs:any namespace="##any" minOccurs="0" maxOccurs="unbounded" processContents="lax" />
+    </xs:sequence>
+    <xs:anyAttribute namespace="##other" />
+  </xs:complexType>
+
+  <!-- Global Attributes -->
+  <xs:attribute name="mustUnderstand" >
+    <xs:simpleType>
+      <xs:restriction base='xs:boolean'>
+        <xs:pattern value='0|1' />
+      </xs:restriction>
+    </xs:simpleType>
+  </xs:attribute>
+
+  <xs:attribute name="actor" type="xs:anyURI" />
+
+  <xs:element name="Fault" type="tns:Fault" />
+  <xs:complexType name="Fault" final="extension" >
+    <xs:sequence>
+      <xs:element name="faultcode" type="xs:QName" />
+      <xs:element name="faultstring" type="xs:string" />
+      <xs:element name="faultactor" type="xs:anyURI" minOccurs="0" />
+      <xs:element name="detail" type="tns:detail" minOccurs="0" />
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="detail">
+    <xs:sequence>
+      <xs:any namespace="##any" minOccurs="0" maxOccurs="unbounded" processContents="lax" />
+    </xs:sequence>
+    <xs:anyAttribute namespace="##other" />
+  </xs:complexType>
+
+</xs:schema>

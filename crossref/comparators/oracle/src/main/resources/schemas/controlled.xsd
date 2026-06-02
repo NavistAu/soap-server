@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:tns="http://crossref.example/controlled"
+           targetNamespace="http://crossref.example/controlled"
+           elementFormDefault="qualified">
+
+  <xs:element name="Echo">
+    <xs:complexType><xs:sequence>
+      <xs:element name="Text" type="xs:string" minOccurs="1"/>
+    </xs:sequence></xs:complexType>
+  </xs:element>
+  <xs:element name="EchoResponse">
+    <xs:complexType><xs:sequence>
+      <xs:element name="Text" type="xs:string" minOccurs="1"/>
+    </xs:sequence></xs:complexType>
+  </xs:element>
+
+  <!-- Named complexType for EchoNamed operation (Group C: named-type validation) -->
+  <xs:complexType name="EchoNamedInputType">
+    <xs:sequence>
+      <xs:element name="Value" type="xs:string" minOccurs="1"/>
+    </xs:sequence>
+  </xs:complexType>
+  <xs:element name="EchoNamed" type="tns:EchoNamedInputType"/>
+  <xs:element name="EchoNamedResponse">
+    <xs:complexType><xs:sequence>
+      <xs:element name="Value" type="xs:string" minOccurs="1"/>
+    </xs:sequence></xs:complexType>
+  </xs:element>
+
+</xs:schema>
