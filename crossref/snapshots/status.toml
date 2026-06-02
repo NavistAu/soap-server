@@ -1,5 +1,7 @@
 doc_literal_named_missing = "verified"
 doc_literal_named_present = "verified"
+interop_cxf_echo = "verified"
+interop_zeep_echo = "verified"
 ns_on_body = "verified"
 ns_on_envelope = "verified"
 ns_on_header = "verified"

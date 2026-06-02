@@ -49,3 +49,28 @@ base_images = [
 ]
 [comparator.versions]
 rust = "1.88"
+
+[[comparator]]
+name = "cxf-client"
+role = "interop-client"
+build = "comparators/cxf-client"
+base_images = [
+  "maven:3.9-eclipse-temurin-21@sha256:1bb51c5ed28b95aef2bc7b46bff6940da43747cdaf838ce4afc2081ce9403750",
+  "eclipse-temurin:21-jre@sha256:010e0a06bd4e0184dec58626afb3ba727b42c56c91b977e2f0a9e0837e0fa3fb",
+]
+[comparator.versions]
+cxf = "4.0.5"
+jdk = "21"
+scenarios = ["interop_cxf_echo"]
+
+[[comparator]]
+name = "zeep-client"
+role = "interop-client"
+build = "comparators/zeep-client"
+base_images = [
+  "python:3.12-slim",
+]
+[comparator.versions]
+zeep = "4.3.1"
+python = "3.12"
+scenarios = ["interop_zeep_echo"]

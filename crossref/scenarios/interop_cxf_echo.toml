@@ -1,0 +1,17 @@
+name = "interop_cxf_echo"
+operation = "Echo"
+# category = "interop" — driven by interop.rs (not the POST loop).
+# The CXF client container sends its own Echo request and asserts the response.
+# outcome = success means the client must exit 0 (operation completed successfully).
+outcome = "success"
+# soap_version and content_type are not used directly (the CXF client sets them).
+soap_version = "1.2"
+content_type = "application/soap+xml; charset=utf-8"
+http_method = "POST"
+http_path = "/soap"
+expected_status = 200
+# No request_file: the CXF client container constructs its own request.
+request_file = ""
+# Marker: this scenario is interop-category (driven by interop::run_interop, not run()).
+interop_driven = true
+interop_client = "cxf-client"

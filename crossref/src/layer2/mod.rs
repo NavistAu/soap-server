@@ -1,6 +1,7 @@
 //! Layer-2 orchestration: compose lifecycle, endpoints, verdict, promotion, report.
 
 pub mod compose;
+pub mod interop;
 pub mod promote;
 pub mod report;
 pub mod verdict;

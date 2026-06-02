@@ -56,6 +56,12 @@ async fn replay_all_scenarios() {
     let masks = default_masks();
 
     for sc in load_scenarios() {
+        // Skip interop-driven scenarios — they are driven by container clients,
+        // not the Layer-1 POST loop.
+        if sc.interop_driven {
+            continue;
+        }
+
         let sut = select_sut(&sc.name);
         let req = std::fs::read(dir("scenarios").join(&sc.request_file)).unwrap();
 

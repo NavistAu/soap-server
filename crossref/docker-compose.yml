@@ -31,3 +31,20 @@ services:
       interval: 2s
       timeout: 2s
       retries: 30
+  # Interop clients — one-shot; NOT started by the normal conformance up.
+  # Run with: docker compose --profile interop run --rm cxf-client
+  #           docker compose --profile interop run --rm zeep-client
+  cxf-client:
+    build:
+      context: ./comparators/cxf-client
+    profiles: ["interop"]
+    depends_on:
+      controlled-server:
+        condition: service_healthy
+  zeep-client:
+    build:
+      context: ./comparators/zeep-client
+    profiles: ["interop"]
+    depends_on:
+      controlled-server:
+        condition: service_healthy

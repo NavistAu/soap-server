@@ -49,9 +49,14 @@ pub struct Scenario {
     pub expected_status: u16,
     pub outcome: Outcome,
     /// Path (relative to `scenarios/`) of the request body XML.
+    /// Empty string for interop-driven scenarios (which supply their own requests).
     pub request_file: String,
     #[serde(default)]
     pub fault: Option<FaultExpectation>,
+    /// If true, this scenario is driven by the interop client containers
+    /// (interop::run_interop), not the Layer-1 POST loop. Skipped in layer1_replay.
+    #[serde(default)]
+    pub interop_driven: bool,
 }
 
 impl Scenario {
