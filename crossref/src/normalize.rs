@@ -489,6 +489,114 @@ pub fn mask_only(
     canonicalize_prefixes(&masked)
 }
 
+/// Like `mask_only` but also drops entire subtrees whose local-name path matches
+/// any entry in `drop_paths`. The element and all its descendants are omitted from
+/// output. This is used to strip `Envelope/Header` from WS-Security responses so
+/// the response `wsse:Security`/Timestamp added by CXF does not affect body comparison.
+pub fn mask_only_with_drops(
+    xml: &[u8],
+    text_masks: &[MaskRule],
+    attr_masks: &[AttrMaskRule],
+    drop_paths: &[MaskRule],
+) -> Result<Vec<u8>, String> {
+    let dropped = drop_subtrees(xml, drop_paths)?;
+    let masked = apply_masks(&dropped, text_masks, attr_masks)?;
+    canonicalize_prefixes(&masked)
+}
+
+/// Parse `xml` and omit any element (and its entire subtree) whose local-name path
+/// matches a rule in `drop_paths`.
+fn drop_subtrees(xml: &[u8], drop_paths: &[MaskRule]) -> Result<Vec<u8>, String> {
+    let mut reader = Reader::from_reader(xml);
+    reader.config_mut().trim_text(false);
+    let mut writer = Writer::new(Cursor::new(Vec::new()));
+    let mut stack: Vec<String> = Vec::new();
+    // Depth at which we entered a dropped subtree (None = not dropping).
+    let mut drop_depth: Option<usize> = None;
+    let mut buf = Vec::new();
+
+    loop {
+        match reader
+            .read_event_into(&mut buf)
+            .map_err(|e| e.to_string())?
+        {
+            Event::Start(ref e) => {
+                let lname = local_name(e);
+                stack.push(lname);
+                if drop_depth.is_some() {
+                    // Already inside a dropped subtree — don't emit.
+                } else if drop_paths.iter().any(|r| r.matches(&stack)) {
+                    // Entering a dropped subtree — record depth, don't emit.
+                    drop_depth = Some(stack.len());
+                } else {
+                    writer
+                        .write_event(Event::Start(e.to_owned()))
+                        .map_err(|err| err.to_string())?;
+                }
+            }
+            Event::Empty(ref e) => {
+                let lname = local_name(e);
+                stack.push(lname.clone());
+                if drop_depth.is_none() {
+                    if drop_paths.iter().any(|r| r.matches(&stack)) {
+                        // Empty element at a drop path — silently skip.
+                    } else {
+                        writer
+                            .write_event(Event::Empty(e.to_owned()))
+                            .map_err(|err| err.to_string())?;
+                    }
+                }
+                stack.pop();
+            }
+            Event::End(ref e) => {
+                if let Some(dd) = drop_depth {
+                    if stack.len() == dd {
+                        // Closing tag of the dropped root element — exit drop mode.
+                        drop_depth = None;
+                    }
+                    // Don't emit the end tag (it's inside the dropped subtree).
+                } else {
+                    writer
+                        .write_event(Event::End(e.to_owned()))
+                        .map_err(|err| err.to_string())?;
+                }
+                stack.pop();
+            }
+            Event::Text(ref t) => {
+                if drop_depth.is_none() {
+                    writer
+                        .write_event(Event::Text(t.to_owned()))
+                        .map_err(|err| err.to_string())?;
+                }
+            }
+            Event::CData(ref cd) => {
+                if drop_depth.is_none() {
+                    writer
+                        .write_event(Event::CData(cd.to_owned()))
+                        .map_err(|err| err.to_string())?;
+                }
+            }
+            Event::GeneralRef(ref r) => {
+                if drop_depth.is_none() {
+                    writer
+                        .write_event(Event::GeneralRef(r.to_owned()))
+                        .map_err(|err| err.to_string())?;
+                }
+            }
+            Event::Eof => break,
+            other => {
+                if drop_depth.is_none() {
+                    writer
+                        .write_event(other.to_owned())
+                        .map_err(|err| err.to_string())?;
+                }
+            }
+        }
+        buf.clear();
+    }
+    Ok(writer.into_inner().into_inner())
+}
+
 /// Parse `xml`, apply text masks and attribute masks, re-serialize to bytes.
 fn apply_masks(
     xml: &[u8],

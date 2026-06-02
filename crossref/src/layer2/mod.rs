@@ -5,13 +5,13 @@ pub mod promote;
 pub mod report;
 pub mod verdict;
 
-use crate::normalize::{mask_only, AttrMaskRule, MaskRule};
+use crate::normalize::{mask_only, mask_only_with_drops, AttrMaskRule, MaskRule};
 use crate::oracle::Oracle;
 use crate::scenario::{Outcome, Scenario, SoapVersion};
 use crate::snapshot::SnapshotStore;
 use promote::promote;
 use report::Report;
-use verdict::{Eval, Verdict};
+use verdict::{Eval, Resp, Verdict};
 
 /// Host-published port URLs for local runs (using the docker-compose.local.yml override).
 pub struct Endpoints {
@@ -72,7 +72,17 @@ impl VersionRouting {
     }
 }
 
-/// All in-scope conformance scenarios for Phase 1b + Phase 1c SOAP 1.1.
+/// WS-Security scenarios requiring outcome-equivalence comparison (not byte-diff).
+/// These are handled by `run_wssec_scenario` instead of `run_scenario`.
+const WSSEC_SCENARIOS: &[&str] = &[
+    "wssec_digest_success",
+    "wssec_bad_password",
+    "wssec_wrong_username",
+    "wssec_missing_auth",
+    "wssec_stale_timestamp",
+];
+
+/// All in-scope conformance scenarios for Phase 1b + Phase 1c SOAP 1.1 + WS-Security.
 const IN_SCOPE: &[&str] = &[
     // Phase 1b: SOAP 1.2 scenarios
     "op_echo_success",
@@ -91,6 +101,12 @@ const IN_SCOPE: &[&str] = &[
     "soap11_echo_success",
     "soap11_fault",
     "soap11_named_present",
+    // Phase 1c: WS-Security scenarios (outcome-equivalence)
+    "wssec_digest_success",
+    "wssec_bad_password",
+    "wssec_wrong_username",
+    "wssec_missing_auth",
+    "wssec_stale_timestamp",
 ];
 
 /// Drive all in-scope conformance scenarios, return the verdict report.
@@ -123,14 +139,25 @@ pub fn run(
             }
         }
 
-        let verdict = run_scenario(
-            name,
-            &scenarios_dir,
-            endpoints,
-            &oracle,
-            promote_on_pass,
-            &store,
-        );
+        let verdict = if WSSEC_SCENARIOS.contains(&name) {
+            run_wssec_scenario(
+                name,
+                &scenarios_dir,
+                endpoints,
+                &oracle,
+                promote_on_pass,
+                &store,
+            )
+        } else {
+            run_scenario(
+                name,
+                &scenarios_dir,
+                endpoints,
+                &oracle,
+                promote_on_pass,
+                &store,
+            )
+        };
         rows.push((name.to_string(), verdict));
     }
 
@@ -317,6 +344,175 @@ fn run_scenario(
     // 9. Promote on pass.
     if v == Verdict::Pass && promote_on_pass {
         if let Err(e) = promote(store, name, &our_canon) {
+            eprintln!("[{name}] promotion failed: {e}");
+        }
+    }
+
+    v
+}
+
+/// Run a WS-Security scenario using outcome-equivalence (spec §10).
+///
+/// Routing:
+/// - `wssec_stale_timestamp` → our `/soapsec-strict` + CXF `/soapsec-strict`
+/// - all others              → our `/soapsec`         + CXF `/soapsec`
+///
+/// Comparison model:
+/// - Validate both responses via oracle `soap12-envelope` schema.
+/// - Mask the entire `Envelope/Header` subtree (drops response Security/Timestamp).
+/// - Mask `Envelope/Body/Fault/Reason/Text` + `xml:lang` (reason non-asserted).
+/// - Compare via `evaluate_outcome_equivalence` (both-success + equal body,
+///   or both-fault → Pass; mixed outcome → SutFail).
+fn run_wssec_scenario(
+    name: &str,
+    scenarios_dir: &std::path::Path,
+    endpoints: &Endpoints,
+    oracle: &Oracle,
+    promote_on_pass: bool,
+    store: &SnapshotStore,
+) -> Verdict {
+    // 1. Load scenario metadata.
+    let toml_path = scenarios_dir.join(format!("{name}.toml"));
+    let toml_str = match std::fs::read_to_string(&toml_path) {
+        Ok(s) => s,
+        Err(e) => return Verdict::HarnessError(format!("read {name}.toml: {e}")),
+    };
+    let scenario: crate::scenario::Scenario = match toml::from_str(&toml_str) {
+        Ok(s) => s,
+        Err(e) => return Verdict::HarnessError(format!("parse {name}.toml: {e}")),
+    };
+
+    // 2. Choose lenient vs strict path.
+    let is_strict = name == "wssec_stale_timestamp";
+    let our_path = if is_strict {
+        "/soapsec-strict"
+    } else {
+        "/soapsec"
+    };
+    let cxf_suffix = if is_strict {
+        "soapsec-strict"
+    } else {
+        "soapsec"
+    };
+    let our_url = format!("{}{}", endpoints.our_base(), our_path);
+    let cxf_url = format!("{}/{}", endpoints.cxf_base(), cxf_suffix);
+
+    // 3. Read request bytes.
+    let request_path = scenarios_dir.join(&scenario.request_file);
+    let request_bytes = match std::fs::read(&request_path) {
+        Ok(b) => b,
+        Err(e) => {
+            return Verdict::HarnessError(format!("read request {}: {e}", scenario.request_file))
+        }
+    };
+
+    // 4. POST to both servers.
+    let (our_status, our_body) = match post(&our_url, &request_bytes, &scenario.content_type) {
+        Ok(r) => r,
+        Err(e) => return Verdict::HarnessError(format!("POST our server ({our_url}): {e}")),
+    };
+    let (cxf_status, cxf_body) = match post(&cxf_url, &request_bytes, &scenario.content_type) {
+        Ok(r) => r,
+        Err(e) => return Verdict::HarnessError(format!("POST CXF ({cxf_url}): {e}")),
+    };
+
+    eprintln!(
+        "[{name}] our={our_status} ({our_url}) cxf={cxf_status} ({cxf_url}) our_body_len={} cxf_body_len={}",
+        our_body.len(),
+        cxf_body.len()
+    );
+    eprintln!("[{name}] our_body: {}", String::from_utf8_lossy(&our_body));
+    eprintln!("[{name}] cxf_body: {}", String::from_utf8_lossy(&cxf_body));
+
+    // 5. Validate both responses against soap12-envelope schema.
+    let our_valid = match oracle.validate(&our_body, "soap12-envelope") {
+        Ok(r) => r.valid,
+        Err(e) => return Verdict::HarnessError(format!("oracle validate our envelope: {e}")),
+    };
+    let cxf_valid = match oracle.validate(&cxf_body, "soap12-envelope") {
+        Ok(r) => r.valid,
+        Err(e) => return Verdict::HarnessError(format!("oracle validate cxf envelope: {e}")),
+    };
+
+    // 6. Determine success/fault outcome per side.
+    // success = HTTP 200 (no Fault).
+    let our_is_success = our_status == 200;
+    let cxf_is_success = cxf_status == 200;
+
+    // 7. For body comparison (used only when both succeed): mask Header subtree +
+    //    Fault/Reason/Text (non-asserted), then C14N.
+    let drop_header = vec![MaskRule::new("Envelope/Header")];
+    let fault_text_masks = vec![MaskRule::new("Envelope/Body/Fault/Reason/Text")];
+    let fault_attr_masks = vec![AttrMaskRule::new(
+        "Envelope/Body/Fault/Reason/Text",
+        "xml:lang",
+    )];
+
+    let our_masked_body = if our_valid {
+        match mask_only_with_drops(
+            &our_body,
+            &fault_text_masks,
+            &fault_attr_masks,
+            &drop_header,
+        ) {
+            Ok(b) => b,
+            Err(e) => return Verdict::HarnessError(format!("mask_only_with_drops our: {e}")),
+        }
+    } else {
+        vec![]
+    };
+    let cxf_masked_body = if cxf_valid {
+        match mask_only_with_drops(
+            &cxf_body,
+            &fault_text_masks,
+            &fault_attr_masks,
+            &drop_header,
+        ) {
+            Ok(b) => b,
+            Err(e) => return Verdict::HarnessError(format!("mask_only_with_drops cxf: {e}")),
+        }
+    } else {
+        vec![]
+    };
+
+    // C14N the masked bodies via oracle.
+    let our_body_canon = if our_valid && !our_masked_body.is_empty() {
+        match oracle.c14n(&our_masked_body) {
+            Ok(b) => b,
+            Err(e) => return Verdict::HarnessError(format!("oracle c14n our: {e}")),
+        }
+    } else {
+        vec![]
+    };
+    let cxf_body_canon = if cxf_valid && !cxf_masked_body.is_empty() {
+        match oracle.c14n(&cxf_masked_body) {
+            Ok(b) => b,
+            Err(e) => return Verdict::HarnessError(format!("oracle c14n cxf: {e}")),
+        }
+    } else {
+        vec![]
+    };
+
+    // 8. Build Resp structs and evaluate outcome-equivalence.
+    let our_resp = Resp {
+        schema_valid: our_valid,
+        is_success: our_is_success,
+        masked_body_canon: our_body_canon.clone(),
+    };
+    let cxf_resp = Resp {
+        schema_valid: cxf_valid,
+        is_success: cxf_is_success,
+        masked_body_canon: cxf_body_canon,
+    };
+
+    let v = verdict::evaluate_outcome_equivalence(&our_resp, &cxf_resp);
+
+    eprintln!("[{name}] verdict: {v:?}");
+
+    // 9. Promote on pass.
+    if v == Verdict::Pass && promote_on_pass {
+        // Use our canonical body as the evidence snapshot.
+        if let Err(e) = promote(store, name, &our_body_canon) {
             eprintln!("[{name}] promotion failed: {e}");
         }
     }

@@ -77,6 +77,65 @@ pub fn evaluate(eval: &Eval) -> Verdict {
     }
 }
 
+// ─── Outcome-equivalence model for WS-Security scenarios ─────────────────────
+//
+// Per spec §10, WS-Security conformance is assessed at the *outcome* level:
+// two servers that both accept (HTTP 200 + equivalent body) or both reject
+// (SOAP Fault) a given credential are considered equivalent. Exact fault wording,
+// nonce-cache state, and response Security headers are NOT asserted.
+
+/// A normalised response for outcome-equivalence comparison.
+/// - `schema_valid`: the SOAP envelope validated against the oracle schema.
+/// - `is_success`: HTTP 200 and no SOAP Fault element in the body.
+/// - `masked_body_canon`: oracle-C14N bytes of the Body subtree with the entire
+///   Envelope/Header dropped and Fault/Reason/Text masked. Used only when both
+///   sides are schema-valid and both succeed; otherwise the body is not compared.
+#[derive(Debug, Clone)]
+pub struct Resp {
+    pub schema_valid: bool,
+    pub is_success: bool,
+    /// Oracle-C14N bytes of the masked body (for body-level equality on success).
+    pub masked_body_canon: Vec<u8>,
+}
+
+/// Evaluate outcome-equivalence for a WS-Security scenario (spec §10).
+///
+/// Rules:
+/// - our schema-invalid → `SutFail`.
+/// - ref schema-invalid → `ReferenceDisagreement`.
+/// - both schema-valid AND both success AND equal masked body → `Pass`.
+/// - both schema-valid AND both success AND unequal body → `SutFail` (real diff).
+/// - both schema-valid AND both fault (non-success) → `Pass` (class-equivalence; reason non-asserted).
+/// - one success + one fault → `SutFail` (different outcome).
+pub fn evaluate_outcome_equivalence(our: &Resp, cxf: &Resp) -> Verdict {
+    if !our.schema_valid {
+        return Verdict::SutFail("our response schema-invalid".to_string());
+    }
+    if !cxf.schema_valid {
+        return Verdict::ReferenceDisagreement("CXF response schema-invalid".to_string());
+    }
+    match (our.is_success, cxf.is_success) {
+        (true, true) => {
+            if our.masked_body_canon == cxf.masked_body_canon {
+                Verdict::Pass
+            } else {
+                Verdict::SutFail(format!(
+                    "both succeeded but body differs: our={} cxf={}",
+                    String::from_utf8_lossy(&our.masked_body_canon),
+                    String::from_utf8_lossy(&cxf.masked_body_canon),
+                ))
+            }
+        }
+        (false, false) => Verdict::Pass, // both rejected — class-equivalence
+        (true, false) => Verdict::SutFail(
+            "our server accepted but CXF rejected (SUT admitted an invalid credential)".to_string(),
+        ),
+        (false, true) => Verdict::SutFail(
+            "our server rejected but CXF accepted (SUT rejected a valid credential)".to_string(),
+        ),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -88,6 +147,98 @@ mod tests {
     fn err(s: &str) -> Result<Vec<u8>, String> {
         Err(s.to_string())
     }
+
+    // ─── evaluate_outcome_equivalence unit tests ───────────────────────────────
+
+    fn resp_success(body: &str) -> Resp {
+        Resp {
+            schema_valid: true,
+            is_success: true,
+            masked_body_canon: body.as_bytes().to_vec(),
+        }
+    }
+
+    fn resp_fault() -> Resp {
+        Resp {
+            schema_valid: true,
+            is_success: false,
+            masked_body_canon: vec![],
+        }
+    }
+
+    fn resp_invalid() -> Resp {
+        Resp {
+            schema_valid: false,
+            is_success: false,
+            masked_body_canon: vec![],
+        }
+    }
+
+    #[test]
+    fn oe_both_success_equal_body_is_pass() {
+        let our = resp_success("<body>hi</body>");
+        let cxf = resp_success("<body>hi</body>");
+        assert_eq!(evaluate_outcome_equivalence(&our, &cxf), Verdict::Pass);
+    }
+
+    #[test]
+    fn oe_both_fault_is_pass() {
+        let our = resp_fault();
+        let cxf = resp_fault();
+        assert_eq!(evaluate_outcome_equivalence(&our, &cxf), Verdict::Pass);
+    }
+
+    #[test]
+    fn oe_our_success_cxf_fault_is_sut_fail() {
+        let our = resp_success("<body>hi</body>");
+        let cxf = resp_fault();
+        assert!(matches!(
+            evaluate_outcome_equivalence(&our, &cxf),
+            Verdict::SutFail(_)
+        ));
+    }
+
+    #[test]
+    fn oe_our_fault_cxf_success_is_sut_fail() {
+        let our = resp_fault();
+        let cxf = resp_success("<body>hi</body>");
+        assert!(matches!(
+            evaluate_outcome_equivalence(&our, &cxf),
+            Verdict::SutFail(_)
+        ));
+    }
+
+    #[test]
+    fn oe_our_schema_invalid_is_sut_fail() {
+        let our = resp_invalid();
+        let cxf = resp_fault();
+        assert!(matches!(
+            evaluate_outcome_equivalence(&our, &cxf),
+            Verdict::SutFail(_)
+        ));
+    }
+
+    #[test]
+    fn oe_ref_schema_invalid_is_reference_disagreement() {
+        let our = resp_fault();
+        let cxf = resp_invalid();
+        assert!(matches!(
+            evaluate_outcome_equivalence(&our, &cxf),
+            Verdict::ReferenceDisagreement(_)
+        ));
+    }
+
+    #[test]
+    fn oe_both_success_unequal_body_is_sut_fail() {
+        let our = resp_success("<body>A</body>");
+        let cxf = resp_success("<body>B</body>");
+        assert!(matches!(
+            evaluate_outcome_equivalence(&our, &cxf),
+            Verdict::SutFail(_)
+        ));
+    }
+
+    // ─── original evaluate() tests ────────────────────────────────────────────
 
     #[test]
     fn verdict_pass_when_equal() {

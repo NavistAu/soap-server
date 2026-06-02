@@ -26,6 +26,12 @@
       <artifactId>saaj-impl</artifactId>
       <version>3.0.4</version>
     </dependency>
+    <!-- WS-Security (WSS4J) interceptors for the /soapsec endpoints -->
+    <dependency>
+      <groupId>org.apache.cxf</groupId>
+      <artifactId>cxf-rt-ws-security</artifactId>
+      <version>${cxf.version}</version>
+    </dependency>
   </dependencies>
   <build>
     <finalName>cxf-ref</finalName>
