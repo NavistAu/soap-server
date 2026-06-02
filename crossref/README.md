@@ -3,8 +3,8 @@
 Differential conformance & interop harness. See the design spec:
 `../docs/superpowers/specs/2026-06-02-crossref-harness-design.md`.
 
-**Phase 1 (1a + 1b + 1c) is complete.** All 24 seed scenarios are `verified`:
-22 conformance + 2 interop. Zero unverified, zero SutFail, zero HarnessError (spec §11.5).
+**Phase 1 (1a + 1b + 1c) is complete.** All 25 seed scenarios are `verified`:
+23 conformance + 2 interop. Zero unverified, zero SutFail, zero HarnessError (spec §11.5).
 Phase 2 (onvif-server) is the next spec→plan→build.
 
 ---
@@ -49,9 +49,9 @@ cargo run -p crossref --bin layer2 -- --promote --interop
 
 This command:
 1. Brings the compose topology up (`controlled-server`, `oracle`, `cxf`) and builds images.
-2. Runs all 22 in-scope conformance scenarios against our server and the CXF reference
+2. Runs all 23 in-scope conformance scenarios against our server and the CXF reference
    server, validating each response via the oracle. SOAP 1.1, WS-Security (outcome-
-   equivalence), and WSDL-rewrite scenarios are included.
+   equivalence), WSDL-rewrite, and the raw-XML fault-detail scenario are included.
 3. Runs the 2 interop scenarios: `cxf-client` and `zeep-client` containers drive our
    server directly, asserting their operations succeed.
 4. On a `Pass` verdict, promotes the snapshot from `unverified` to `verified` and writes

@@ -34,9 +34,9 @@ impl Report {
             .count();
         let conf_fail = conformance
             .iter()
-            .filter(|(_, v)| matches!(v, Verdict::SutFail(_) | Verdict::HarnessError(_)))
+            .filter(|(_, v)| !matches!(v, Verdict::Pass | Verdict::KnownDivergence(_)))
             .count();
-        println!("  → {conf_pass} Pass/KnownDivergence, {conf_fail} Fail/Error\n");
+        println!("  → {conf_pass} Pass/KnownDivergence, {conf_fail} Fail/Error/Disagreement\n");
 
         // --- Interop verdicts ---
         println!("=== Interop ({} scenarios) ===", interop.len());
@@ -49,9 +49,11 @@ impl Report {
             .count();
         let interop_fail = interop
             .iter()
-            .filter(|(_, v)| matches!(v, Verdict::SutFail(_) | Verdict::HarnessError(_)))
+            .filter(|(_, v)| !matches!(v, Verdict::Pass | Verdict::KnownDivergence(_)))
             .count();
-        println!("  → {interop_pass} Pass/KnownDivergence, {interop_fail} Fail/Error\n");
+        println!(
+            "  → {interop_pass} Pass/KnownDivergence, {interop_fail} Fail/Error/Disagreement\n"
+        );
 
         // --- Summary ---
         let total = self.rows.len();
@@ -62,7 +64,7 @@ impl Report {
             conf = conformance.len(),
             interop = interop.len()
         );
-        println!("  {total_pass} Pass/KnownDivergence, {total_fail} Fail/Error");
+        println!("  {total_pass} Pass/KnownDivergence, {total_fail} Fail/Error/Disagreement");
         println!(
             "  {} snapshot(s) still unverified (target: 0 after Phase 1)",
             self.unverified_remaining
@@ -95,5 +97,52 @@ impl Report {
         self.rows
             .iter()
             .all(|(_, v)| matches!(v, Verdict::Pass | Verdict::KnownDivergence(_)))
+    }
+
+    /// Count of verdicts that are NOT Pass/KnownDivergence (i.e. SutFail, HarnessError,
+    /// AND ReferenceDisagreement). Kept consistent with `is_green()` so the printed
+    /// pass/fail totals never disagree with the green gate / exit code.
+    pub fn fail_count(&self) -> usize {
+        self.rows
+            .iter()
+            .filter(|(_, v)| !matches!(v, Verdict::Pass | Verdict::KnownDivergence(_)))
+            .count()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn report(rows: Vec<(&str, Verdict)>) -> Report {
+        Report {
+            rows: rows.into_iter().map(|(n, v)| (n.to_string(), v)).collect(),
+            unverified_remaining: 0,
+        }
+    }
+
+    #[test]
+    fn reference_disagreement_counts_as_fail_and_is_not_green() {
+        let r = report(vec![
+            ("a", Verdict::Pass),
+            ("b", Verdict::ReferenceDisagreement("cxf differs".into())),
+            ("c", Verdict::SutFail("bad".into())),
+        ]);
+        // fail_count must include the ReferenceDisagreement (2 = b + c), consistent with is_green.
+        assert_eq!(r.fail_count(), 2);
+        assert!(!r.is_green());
+        // pass + fail must equal total (no verdict falls through the cracks).
+        let pass = r.rows.len() - r.fail_count();
+        assert_eq!(pass + r.fail_count(), r.rows.len());
+    }
+
+    #[test]
+    fn all_pass_is_green_zero_fail() {
+        let r = report(vec![
+            ("a", Verdict::Pass),
+            ("b", Verdict::KnownDivergence("ok".into())),
+        ]);
+        assert_eq!(r.fail_count(), 0);
+        assert!(r.is_green());
     }
 }
