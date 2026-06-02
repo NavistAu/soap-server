@@ -1,0 +1,41 @@
+# Comparator registry (spec §5.4).
+# TODO: pin base_images by digest before Phase 1b done (digest pinning is a finalization step).
+
+[[comparator]]
+name = "java-xml-oracle"
+role = "schema-oracle"
+build = "comparators/oracle"
+base_images = [
+  "maven:3.9-eclipse-temurin-21",         # TODO: pin by digest before Phase 1b done
+  "eclipse-temurin:21-jre",               # TODO: pin by digest before Phase 1b done
+]
+[comparator.versions]
+santuario = "4.0.3"
+jdk = "21"
+scenarios = ["*"]   # validates/canonicalizes every conformance scenario
+
+[[comparator]]
+name = "cxf"
+role = "reference-server"
+build = "comparators/cxf"
+base_images = [
+  "maven:3.9-eclipse-temurin-21",         # TODO: pin by digest before Phase 1b done
+  "eclipse-temurin:21-jre",               # TODO: pin by digest before Phase 1b done
+]
+[comparator.versions]
+cxf = "4.0.5"
+jdk = "21"
+scenarios = [
+  "op_echo_success",
+  "op_echo_missing_required",
+  "op_echo_empty_text",
+  "op_echo_special_chars",
+  "doc_literal_named_present",
+  "doc_literal_named_missing",
+  "ns_on_envelope",
+  "ns_on_header",
+  "ns_on_body",
+  "ns_on_operation",
+  "ns_on_nested_payload",
+  "ns_prefix_shadowing",
+]

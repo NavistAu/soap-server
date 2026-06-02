@@ -1,0 +1,33 @@
+name: crossref-layer2
+services:
+  controlled-server:
+    build:
+      context: ..
+      dockerfile: crossref/comparators/controlled-server.Dockerfile
+    expose: ["8080"]
+    healthcheck:
+      # debian:bookworm-slim has bash but no curl/wget — use bash TCP probe
+      test: ["CMD", "bash", "-c", "echo > /dev/tcp/localhost/8080"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  cxf:
+    build:
+      context: ./comparators/cxf
+    expose: ["8082"]
+    healthcheck:
+      # eclipse-temurin:21-jre has bash — use bash TCP probe
+      test: ["CMD", "bash", "-c", "echo > /dev/tcp/localhost/8082"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  oracle:
+    build:
+      context: ./comparators/oracle
+    expose: ["8081"]
+    healthcheck:
+      # eclipse-temurin:21-jre has wget — hit the healthz endpoint
+      test: ["CMD", "wget", "-qO-", "http://localhost:8081/healthz"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
