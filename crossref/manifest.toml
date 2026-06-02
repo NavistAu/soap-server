@@ -1,13 +1,12 @@
-# Comparator registry (spec §5.4).
-# TODO: pin base_images by digest before Phase 1b done (digest pinning is a finalization step).
+# Comparator registry (spec §5.4). Images pinned by immutable multi-arch index digest.
 
 [[comparator]]
 name = "java-xml-oracle"
 role = "schema-oracle"
 build = "comparators/oracle"
 base_images = [
-  "maven:3.9-eclipse-temurin-21",         # TODO: pin by digest before Phase 1b done
-  "eclipse-temurin:21-jre",               # TODO: pin by digest before Phase 1b done
+  "maven:3.9-eclipse-temurin-21@sha256:1bb51c5ed28b95aef2bc7b46bff6940da43747cdaf838ce4afc2081ce9403750",
+  "eclipse-temurin:21-jre@sha256:010e0a06bd4e0184dec58626afb3ba727b42c56c91b977e2f0a9e0837e0fa3fb",
 ]
 [comparator.versions]
 santuario = "4.0.3"
@@ -19,8 +18,8 @@ name = "cxf"
 role = "reference-server"
 build = "comparators/cxf"
 base_images = [
-  "maven:3.9-eclipse-temurin-21",         # TODO: pin by digest before Phase 1b done
-  "eclipse-temurin:21-jre",               # TODO: pin by digest before Phase 1b done
+  "maven:3.9-eclipse-temurin-21@sha256:1bb51c5ed28b95aef2bc7b46bff6940da43747cdaf838ce4afc2081ce9403750",
+  "eclipse-temurin:21-jre@sha256:010e0a06bd4e0184dec58626afb3ba727b42c56c91b977e2f0a9e0837e0fa3fb",
 ]
 [comparator.versions]
 cxf = "4.0.5"
@@ -39,3 +38,14 @@ scenarios = [
   "ns_on_nested_payload",
   "ns_prefix_shadowing",
 ]
+
+[[comparator]]
+name = "controlled-server"
+role = "sut"
+build = "comparators/controlled-server.Dockerfile"
+base_images = [
+  "rust:1.88@sha256:af306cfa71d987911a781c37b59d7d67d934f49684058f96cf72079c3626bfe0",
+  "debian:bookworm-slim@sha256:0104b334637a5f19aa9c983a91b54c89887c0984081f2068983107a6f6c21eeb",
+]
+[comparator.versions]
+rust = "1.88"

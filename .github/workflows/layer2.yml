@@ -1,0 +1,28 @@
+name: crossref Layer 2 (conformance)
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 13 * * *"   # nightly
+
+jobs:
+  layer2:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.88.0"
+      - uses: Swatinem/rust-cache@v2
+      - name: Build images + run Layer 2
+        run: |
+          docker compose -f crossref/docker-compose.yml -f crossref/docker-compose.local.yml up -d --build
+          cargo run -p crossref --bin layer2 -- --promote
+      - name: Tear down
+        if: always()
+        run: docker compose -f crossref/docker-compose.yml -f crossref/docker-compose.local.yml down -v
+      - name: Surface snapshot drift / promotion as reviewable change
+        run: |
+          git status --short crossref/snapshots
+          # Layer 2 promotion changes are committed deliberately, not by CI; this step
+          # only surfaces them. A non-empty diff here on a scheduled run is expected
+          # (newly verified) and reviewed via a follow-up PR, never auto-committed.
