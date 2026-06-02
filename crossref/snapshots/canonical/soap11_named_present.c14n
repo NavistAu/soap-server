@@ -1,0 +1,1 @@
+<n1:Envelope xmlns:n1="http://schemas.xmlsoap.org/soap/envelope/"><n1:Body><n0:EchoNamedResponse xmlns:n0="http://crossref.example/controlled"><n0:Value>soap11_named_value</n0:Value></n0:EchoNamedResponse></n1:Body></n1:Envelope>

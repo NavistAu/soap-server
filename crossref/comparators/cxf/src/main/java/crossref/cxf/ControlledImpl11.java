@@ -8,14 +8,15 @@ import jakarta.xml.ws.soap.SOAPFaultException;
 import jakarta.xml.soap.*;
 
 /**
- * Deterministic WSDL-first implementation of the ControlledPort SEI.
- * Bare doc/literal: CXF generates Holder parameters for in-out fields.
+ * SOAP 1.1 implementation of ControlledPort. Raises proper SOAP 1.1 faults
+ * (faultcode / faultstring, no xml:lang on faultstring) instead of SOAP 1.2
+ * Code/Reason/Text. Published at /soap11 by Main.
  */
 @WebService(endpointInterface = "crossref.cxf.generated.ControlledPort",
             targetNamespace = "http://crossref.example/controlled",
             serviceName = "ControlledService",
             portName = "ControlledPort")
-public class ControlledImpl implements ControlledPort {
+public class ControlledImpl11 implements ControlledPort {
 
     @Override
     public void echo(Holder<String> text) {
@@ -34,27 +35,12 @@ public class ControlledImpl implements ControlledPort {
     }
 
     private SOAPFaultException senderFault(String reason) {
-        // Try to detect the current endpoint's SOAP version from the message context.
-        // Falls back to SOAP 1.1 if unavailable (works for both 1.1 and 1.2 endpoints
-        // because CXF's fault interceptor re-serialises using the endpoint's binding).
-        try {
-            // Attempt SOAP 1.2 fault first (for the /soap endpoint).
-            SOAPFault f12 = SOAPFactory.newInstance(SOAPConstants.SOAP_1_2_PROTOCOL).createFault();
-            f12.setFaultCode(new javax.xml.namespace.QName(
-                "http://www.w3.org/2003/05/soap-envelope", "Sender", "env"));
-            f12.setFaultString(reason);
-            return new SOAPFaultException(f12);
-        } catch (SOAPException e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    /** SOAP 1.1 sender fault — used by the /soap11 endpoint via {@link ControlledImpl11}. */
-    static SOAPFaultException senderFault11(String reason) {
         try {
             SOAPFault f = SOAPFactory.newInstance(SOAPConstants.SOAP_1_1_PROTOCOL).createFault();
+            // SOAP 1.1 fault code: env:Client (no namespace in the local name itself,
+            // but prefixed with the SOAP 1.1 envelope namespace prefix).
             f.setFaultCode(new javax.xml.namespace.QName(
-                "http://schemas.xmlsoap.org/soap/envelope/", "Client", "env"));
+                "http://schemas.xmlsoap.org/soap/envelope/", "Client", "SOAP-ENV"));
             f.setFaultString(reason);
             return new SOAPFaultException(f);
         } catch (SOAPException e) {

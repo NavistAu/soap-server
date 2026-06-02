@@ -7,7 +7,7 @@ pub mod verdict;
 
 use crate::normalize::{mask_only, AttrMaskRule, MaskRule};
 use crate::oracle::Oracle;
-use crate::scenario::{Outcome, Scenario};
+use crate::scenario::{Outcome, Scenario, SoapVersion};
 use crate::snapshot::SnapshotStore;
 use promote::promote;
 use report::Report;
@@ -28,10 +28,53 @@ impl Endpoints {
             oracle: "http://localhost:8081".into(),
         }
     }
+
+    /// Base URL for our server (without the /soap path suffix).
+    fn our_base(&self) -> &str {
+        // our is always "http://host:port/soap" — strip the /soap suffix.
+        self.our.strip_suffix("/soap").unwrap_or(&self.our)
+    }
+
+    /// Base URL for CXF (without the /soap path suffix).
+    fn cxf_base(&self) -> &str {
+        self.cxf.strip_suffix("/soap").unwrap_or(&self.cxf)
+    }
 }
 
-/// The 12 in-scope conformance scenarios for Phase 1b.
+/// Per-scenario routing config derived from soap_version.
+struct VersionRouting {
+    /// Path on our server (e.g. "/soap")
+    our_path: &'static str,
+    /// Full CXF URL for this scenario
+    cxf_url: String,
+    /// Oracle schema id to validate the SOAP envelope
+    envelope_schema: &'static str,
+}
+
+impl VersionRouting {
+    fn for_scenario(scenario: &Scenario, endpoints: &Endpoints) -> Self {
+        match scenario.soap_version {
+            SoapVersion::V11 => VersionRouting {
+                our_path: "/soap",
+                cxf_url: format!("{}/soap11", endpoints.cxf_base()),
+                envelope_schema: "soap11-envelope",
+            },
+            SoapVersion::V12 => VersionRouting {
+                our_path: "/soap",
+                cxf_url: format!("{}/soap", endpoints.cxf_base()),
+                envelope_schema: "soap12-envelope",
+            },
+        }
+    }
+
+    fn our_url(&self, endpoints: &Endpoints) -> String {
+        format!("{}{}", endpoints.our_base(), self.our_path)
+    }
+}
+
+/// All in-scope conformance scenarios for Phase 1b + Phase 1c SOAP 1.1.
 const IN_SCOPE: &[&str] = &[
+    // Phase 1b: SOAP 1.2 scenarios
     "op_echo_success",
     "op_echo_missing_required",
     "op_echo_empty_text",
@@ -44,16 +87,27 @@ const IN_SCOPE: &[&str] = &[
     "ns_on_operation",
     "ns_on_nested_payload",
     "ns_prefix_shadowing",
+    // Phase 1c: SOAP 1.1 scenarios
+    "soap11_echo_success",
+    "soap11_fault",
+    "soap11_named_present",
 ];
 
-/// Drive all 12 in-scope conformance scenarios, return the verdict report.
+/// Drive all in-scope conformance scenarios, return the verdict report.
+///
+/// `scenarios_filter`: if `Some`, only run the listed scenario names.
 ///
 /// For each scenario:
-/// 1. POST the request to both servers.
-/// 2. Validate both responses via the oracle.
+/// 1. POST the request to both servers (using per-soap-version URLs).
+/// 2. Validate both responses via the oracle (per-soap-version schema).
 /// 3. Apply masks → oracle C14N → compare.
 /// 4. On Pass + promote_on_pass: write canonical evidence + flip status.
-pub fn run(endpoints: &Endpoints, repo_root: &std::path::Path, promote_on_pass: bool) -> Report {
+pub fn run(
+    endpoints: &Endpoints,
+    repo_root: &std::path::Path,
+    promote_on_pass: bool,
+    scenarios_filter: Option<&[String]>,
+) -> Report {
     let scenarios_dir = repo_root.join("crossref/scenarios");
     let snapshots_dir = repo_root.join("crossref/snapshots");
     let store = SnapshotStore::new(&snapshots_dir);
@@ -62,11 +116,17 @@ pub fn run(endpoints: &Endpoints, repo_root: &std::path::Path, promote_on_pass: 
     let mut rows: Vec<(String, Verdict)> = Vec::new();
 
     for &name in IN_SCOPE {
+        // Apply the --scenarios filter if provided.
+        if let Some(filter) = scenarios_filter {
+            if !filter.iter().any(|f| f == name) {
+                continue;
+            }
+        }
+
         let verdict = run_scenario(
             name,
             &scenarios_dir,
-            &endpoints.our,
-            &endpoints.cxf,
+            endpoints,
             &oracle,
             promote_on_pass,
             &store,
@@ -84,8 +144,7 @@ pub fn run(endpoints: &Endpoints, repo_root: &std::path::Path, promote_on_pass: 
 fn run_scenario(
     name: &str,
     scenarios_dir: &std::path::Path,
-    our_url: &str,
-    cxf_url: &str,
+    endpoints: &Endpoints,
     oracle: &Oracle,
     promote_on_pass: bool,
     store: &SnapshotStore,
@@ -101,7 +160,13 @@ fn run_scenario(
         Err(e) => return Verdict::HarnessError(format!("parse {name}.toml: {e}")),
     };
 
-    // 2. Read request bytes.
+    // 2. Derive per-scenario routing from soap_version.
+    let routing = VersionRouting::for_scenario(&scenario, endpoints);
+    let our_url = routing.our_url(endpoints);
+    let cxf_url = &routing.cxf_url;
+    let envelope_schema = routing.envelope_schema;
+
+    // 3. Read request bytes.
     let request_path = scenarios_dir.join(&scenario.request_file);
     let request_bytes = match std::fs::read(&request_path) {
         Ok(b) => b,
@@ -110,8 +175,8 @@ fn run_scenario(
         }
     };
 
-    // 3. POST to both servers.
-    let (our_status, our_body) = match post(our_url, &request_bytes, &scenario.content_type) {
+    // 4. POST to both servers.
+    let (our_status, our_body) = match post(&our_url, &request_bytes, &scenario.content_type) {
         Ok(r) => r,
         Err(e) => return Verdict::HarnessError(format!("POST our server: {e}")),
     };
@@ -120,25 +185,27 @@ fn run_scenario(
         Err(e) => return Verdict::HarnessError(format!("POST CXF: {e}")),
     };
 
-    // Log status codes for diagnosis.
+    // Log status codes and bodies for diagnosis.
     eprintln!(
         "[{name}] our={our_status} cxf={cxf_status} our_body_len={} cxf_body_len={}",
         our_body.len(),
         cxf_body.len()
     );
+    eprintln!("[{name}] our_body: {}", String::from_utf8_lossy(&our_body));
+    eprintln!("[{name}] cxf_body: {}", String::from_utf8_lossy(&cxf_body));
 
-    // 4. Validate both responses via oracle.
-    // 4a. Envelope schema validation (all scenarios).
-    let our_env_valid = match oracle.validate(&our_body, "soap12-envelope") {
+    // 5. Validate both responses via oracle.
+    // 5a. Envelope schema validation (using per-soap-version schema).
+    let our_env_valid = match oracle.validate(&our_body, envelope_schema) {
         Ok(r) => r,
         Err(e) => return Verdict::HarnessError(format!("oracle validate our envelope: {e}")),
     };
-    let cxf_env_valid = match oracle.validate(&cxf_body, "soap12-envelope") {
+    let cxf_env_valid = match oracle.validate(&cxf_body, envelope_schema) {
         Ok(r) => r,
         Err(e) => return Verdict::HarnessError(format!("oracle validate cxf envelope: {e}")),
     };
 
-    // 4b. Body child validation for SUCCESS scenarios only.
+    // 5b. Body child validation for SUCCESS scenarios only.
     let (our_body_valid, our_body_errors) = if scenario.outcome == Outcome::Success {
         match extract_body_child(&our_body) {
             Some(child) => match oracle.validate(&child, "controlled") {
@@ -147,13 +214,10 @@ fn run_scenario(
                     return Verdict::HarnessError(format!("oracle validate our body child: {e}"))
                 }
             },
-            None => {
-                // No body child found — treat as validation failure.
-                (
-                    false,
-                    vec!["no body child element found in our response".to_string()],
-                )
-            }
+            None => (
+                false,
+                vec!["no body child element found in our response".to_string()],
+            ),
         }
     } else {
         (true, vec![]) // fault scenarios: body child validation not required
@@ -185,22 +249,34 @@ fn run_scenario(
     let mut ref_errors = cxf_env_valid.errors.clone();
     ref_errors.extend(cxf_body_errors);
 
-    // 5. Build per-scenario masks.
-    // FAULT scenarios: mask Reason/Text content and xml:lang attr (non-asserted per spec §10).
+    // 6. Build per-scenario masks.
+    // SOAP 1.2 FAULT: mask Reason/Text content and xml:lang attr (non-asserted per spec §10).
+    // SOAP 1.1 FAULT: mask faultstring text (no xml:lang attr in 1.1 per spec, but mask if present).
     let (text_masks, attr_masks): (Vec<MaskRule>, Vec<AttrMaskRule>) =
         if scenario.outcome == Outcome::Fault {
-            (
-                vec![MaskRule::new("Envelope/Body/Fault/Reason/Text")],
-                vec![AttrMaskRule::new(
-                    "Envelope/Body/Fault/Reason/Text",
-                    "xml:lang",
-                )],
-            )
+            match scenario.soap_version {
+                SoapVersion::V12 => (
+                    vec![MaskRule::new("Envelope/Body/Fault/Reason/Text")],
+                    vec![AttrMaskRule::new(
+                        "Envelope/Body/Fault/Reason/Text",
+                        "xml:lang",
+                    )],
+                ),
+                SoapVersion::V11 => (
+                    // SOAP 1.1 fault: faultstring is the reason text (§10 non-asserted).
+                    // Also mask xml:lang if CXF adds it (some impls do).
+                    vec![MaskRule::new("Envelope/Body/Fault/faultstring")],
+                    vec![AttrMaskRule::new(
+                        "Envelope/Body/Fault/faultstring",
+                        "xml:lang",
+                    )],
+                ),
+            }
         } else {
             (vec![], vec![])
         };
 
-    // 6. Mask + oracle C14N.
+    // 7. Mask + oracle C14N.
     let our_masked = match mask_only(&our_body, &text_masks, &attr_masks) {
         Ok(b) => b,
         Err(e) => return Verdict::HarnessError(format!("mask_only our: {e}")),
@@ -219,8 +295,7 @@ fn run_scenario(
         Err(e) => return Verdict::HarnessError(format!("oracle c14n cxf: {e}")),
     };
 
-    // 7. Evaluate verdict using existing evaluate() with Result-based Eval.
-    // We build Result<Vec<u8>, String> for each side: Err if invalid, Ok(canon) if valid.
+    // 8. Evaluate verdict using existing evaluate() with Result-based Eval.
     let our_result: Result<Vec<u8>, String> = if our_valid {
         Ok(our_canon.clone())
     } else {
@@ -239,7 +314,7 @@ fn run_scenario(
     };
     let v = verdict::evaluate(&eval);
 
-    // 8. Promote on pass.
+    // 9. Promote on pass.
     if v == Verdict::Pass && promote_on_pass {
         if let Err(e) = promote(store, name, &our_canon) {
             eprintln!("[{name}] promotion failed: {e}");
