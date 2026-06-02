@@ -138,13 +138,13 @@ impl SoapFault {
         let code = self.code.as_soap12_str();
         let reason = escape_text(&self.reason);
 
+        // SOAP 1.2 env:Detail is element-only (xs:any children; no character data).
+        // The human-readable message is already in Reason/Text, so when only a
+        // plain-text `detail` is set we emit nothing rather than invalid chardata (F-3).
         let detail_xml = if let Some(raw) = &self.detail_xml {
             format!("<env:Detail>{raw}</env:Detail>")
         } else {
-            match &self.detail {
-                Some(detail) => format!("<env:Detail>{}</env:Detail>", escape_text(detail)),
-                None => String::new(),
-            }
+            String::new()
         };
 
         let xml = format!(
@@ -284,6 +284,9 @@ mod tests {
 
     #[test]
     fn serialize_fault_with_detail() {
+        // SOAP 1.2 env:Detail is element-only — a plain-text `detail` has no valid
+        // place there (F-3). The reason is already in Reason/Text, so no env:Detail
+        // is emitted. The reason string must still appear in the envelope.
         let fault = SoapFault::new(
             FaultCode::Receiver,
             "Internal error",
@@ -291,8 +294,16 @@ mod tests {
         );
         let xml = String::from_utf8(fault.to_xml_bytes()).unwrap();
         assert!(
-            xml.contains("<env:Detail>extra info</env:Detail>"),
-            "Expected Detail element with content, got: {xml}"
+            !xml.contains("<env:Detail>extra info</env:Detail>"),
+            "SOAP 1.2 must not emit char-data in env:Detail (F-3): {xml}"
+        );
+        assert!(
+            !xml.contains("<env:Detail>"),
+            "No env:Detail at all for plain-text detail (F-3): {xml}"
+        );
+        assert!(
+            xml.contains("Internal error"),
+            "Reason must still be in Reason/Text: {xml}"
         );
     }
 
@@ -579,12 +590,61 @@ mod tests {
 
     #[test]
     fn existing_text_detail_still_escaped_when_no_xml() {
-        // regression: the existing escaped-text path is unchanged when detail_xml is None.
+        // SOAP 1.2: plain-text `detail` has no valid place in element-only env:Detail
+        // (F-3). The human-readable message is already in Reason/Text. Assert no
+        // env:Detail element is emitted — the text is dropped, not wrapped.
         let fault = SoapFault::new(FaultCode::Sender, "r", Some("a < b & c".into()));
         let xml = String::from_utf8(fault.to_xml_bytes()).unwrap();
         assert!(
-            xml.contains("a &lt; b &amp; c"),
-            "text detail must still be escaped: {xml}"
+            !xml.contains("<env:Detail>"),
+            "SOAP 1.2: env:Detail must not be emitted for plain-text detail (F-3): {xml}"
+        );
+    }
+
+    // ── F-3: SOAP 1.2 env:Detail is element-only ────────────────────────────
+
+    /// SOAP 1.2 env:Detail has element-only content (xs:any children, no text).
+    /// When only a plain-text `detail` is set (no `detail_xml`), no env:Detail
+    /// element should appear in the output — the reason is already in Reason/Text.
+    #[test]
+    fn soap12_text_detail_does_not_emit_env_detail_chardata() {
+        let fault = SoapFault::new(
+            FaultCode::Receiver,
+            "Internal error",
+            Some("plain text detail".to_string()),
+        );
+        let xml = String::from_utf8(fault.to_xml_bytes()).unwrap();
+        // Must NOT emit <env:Detail> wrapping character data
+        assert!(
+            !xml.contains("<env:Detail>plain text detail</env:Detail>"),
+            "SOAP 1.2 env:Detail must not contain character data (F-3): {xml}"
+        );
+        // Must NOT emit env:Detail at all when only text detail is present
+        assert!(
+            !xml.contains("<env:Detail>"),
+            "SOAP 1.2 env:Detail must not be emitted for plain-text detail (F-3): {xml}"
+        );
+        // The reason must still be present in Reason/Text
+        assert!(
+            xml.contains("Internal error"),
+            "Reason must still appear in Reason/Text: {xml}"
+        );
+    }
+
+    /// SOAP 1.2: when detail_xml (a real element) is set, env:Detail is still emitted
+    /// with the raw element child — this path is valid and must remain unchanged.
+    #[test]
+    fn soap12_detail_xml_element_still_emits_env_detail() {
+        let fault = SoapFault::new(
+            FaultCode::Receiver,
+            "Internal error",
+            Some("plain text".to_string()),
+        )
+        .with_detail_xml("<c:Child xmlns:c=\"urn:x\"/>");
+        let xml = String::from_utf8(fault.to_xml_bytes()).unwrap();
+        assert!(
+            xml.contains("<env:Detail><c:Child xmlns:c=\"urn:x\"/></env:Detail>"),
+            "detail_xml element path must still emit env:Detail: {xml}"
         );
     }
 
