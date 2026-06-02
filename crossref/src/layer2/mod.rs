@@ -82,7 +82,11 @@ const WSSEC_SCENARIOS: &[&str] = &[
     "wssec_stale_timestamp",
 ];
 
-/// All in-scope conformance scenarios for Phase 1b + Phase 1c SOAP 1.1 + WS-Security.
+/// WSDL-rewrite scenarios (GET ?wsdl): promoted via oracle WSDL-schema validity +
+/// structural rewrite-invariant assertion (not CXF byte diff).
+const WSDL_REWRITE_SCENARIOS: &[&str] = &["wsdl_rewrite_single", "wsdl_rewrite_multi"];
+
+/// All in-scope conformance scenarios for Phase 1b + Phase 1c SOAP 1.1 + WS-Security + WSDL-rewrite.
 const IN_SCOPE: &[&str] = &[
     // Phase 1b: SOAP 1.2 scenarios
     "op_echo_success",
@@ -107,6 +111,9 @@ const IN_SCOPE: &[&str] = &[
     "wssec_wrong_username",
     "wssec_missing_auth",
     "wssec_stale_timestamp",
+    // Phase 1c: WSDL-rewrite scenarios (oracle WSDL-schema validity + invariant)
+    "wsdl_rewrite_single",
+    "wsdl_rewrite_multi",
 ];
 
 /// Drive all in-scope conformance scenarios, return the verdict report.
@@ -139,7 +146,16 @@ pub fn run(
             }
         }
 
-        let verdict = if WSSEC_SCENARIOS.contains(&name) {
+        let verdict = if WSDL_REWRITE_SCENARIOS.contains(&name) {
+            run_wsdl_rewrite_scenario(
+                name,
+                &scenarios_dir,
+                endpoints,
+                &oracle,
+                promote_on_pass,
+                &store,
+            )
+        } else if WSSEC_SCENARIOS.contains(&name) {
             run_wssec_scenario(
                 name,
                 &scenarios_dir,
@@ -518,6 +534,280 @@ fn run_wssec_scenario(
     }
 
     v
+}
+
+/// Run a WSDL-rewrite scenario using oracle WSDL-schema validity + structural invariant.
+///
+/// The authority here is NOT CXF (CXF regenerates its own WSDL, so a byte diff is
+/// meaningless). Instead:
+/// 1. GET `<our_base><http_path>?wsdl` from our server.
+/// 2. Validate the returned WSDL via oracle `wsdl11` schema.
+/// 3. Assert the rewrite invariant structurally (quick-xml parse):
+///    - single (`/soap`): the `<soap:address location>` host is rewritten to the request
+///      host (localhost:8080), not the original placeholder.
+///    - multi (`/soap/a`): ServiceA's `<soap:address>` is rewritten to the request host
+///      + path; ServiceB's `<soap:address>` is NOT clobbered (still `/soap/b`).
+/// 4. Verdict: Pass if WSDL schema-valid AND invariant holds; SutFail otherwise.
+///    On Pass, store the raw WSDL bytes as canonical evidence.
+///
+/// Host masking: for a fixed `localhost:8080` this is deterministic, so we store the
+/// raw served WSDL as evidence without host masking (the location value is the
+/// invariant signal, not noise).
+fn run_wsdl_rewrite_scenario(
+    name: &str,
+    _scenarios_dir: &std::path::Path,
+    endpoints: &Endpoints,
+    oracle: &Oracle,
+    promote_on_pass: bool,
+    store: &SnapshotStore,
+) -> Verdict {
+    // 1. Determine which path to GET.
+    //    wsdl_rewrite_single → /soap?wsdl
+    //    wsdl_rewrite_multi  → /soap/a?wsdl
+    let wsdl_path = match name {
+        "wsdl_rewrite_single" => "/soap",
+        "wsdl_rewrite_multi" => "/soap/a",
+        other => return Verdict::HarnessError(format!("unknown wsdl_rewrite scenario: {other}")),
+    };
+    let wsdl_url = format!("{}{}?wsdl", endpoints.our_base(), wsdl_path);
+
+    // 2. GET the WSDL.
+    let wsdl_bytes = match get_bytes(&wsdl_url) {
+        Ok(b) => b,
+        Err(e) => return Verdict::HarnessError(format!("GET {wsdl_url}: {e}")),
+    };
+
+    eprintln!("[{name}] GET {wsdl_url} → {} bytes", wsdl_bytes.len());
+    eprintln!("[{name}] WSDL:\n{}", String::from_utf8_lossy(&wsdl_bytes));
+
+    // 3. Validate against oracle wsdl11 schema.
+    let validation = match oracle.validate(&wsdl_bytes, "wsdl11") {
+        Ok(r) => r,
+        Err(e) => return Verdict::HarnessError(format!("oracle validate wsdl11: {e}")),
+    };
+    if !validation.valid {
+        eprintln!("[{name}] WSDL schema-invalid: {:?}", validation.errors);
+        return Verdict::SutFail(format!(
+            "WSDL schema-invalid against wsdl11: {:?}",
+            validation.errors
+        ));
+    }
+    eprintln!("[{name}] WSDL schema-valid (wsdl11) ✓");
+
+    // 4. Assert the rewrite invariant.
+    let invariant_result = match name {
+        "wsdl_rewrite_single" => check_single_rewrite_invariant(&wsdl_bytes, endpoints.our_base()),
+        "wsdl_rewrite_multi" => check_multi_rewrite_invariant(&wsdl_bytes, endpoints.our_base()),
+        _ => unreachable!(),
+    };
+    match invariant_result {
+        Ok(()) => eprintln!("[{name}] rewrite invariant holds ✓"),
+        Err(msg) => {
+            eprintln!("[{name}] rewrite invariant FAILED: {msg}");
+            return Verdict::SutFail(format!("rewrite invariant failed: {msg}"));
+        }
+    }
+
+    // 5. Pass — promote on pass (store the raw WSDL bytes as evidence).
+    if promote_on_pass {
+        if let Err(e) = promote(store, name, &wsdl_bytes) {
+            eprintln!("[{name}] promotion failed: {e}");
+        }
+    }
+
+    Verdict::Pass
+}
+
+/// Parse the served WSDL and extract all `<soap:address location="...">` values,
+/// keyed by the service name containing that port.
+///
+/// Returns a list of `(service_name, location_value)` pairs.
+fn extract_soap_addresses(wsdl: &[u8]) -> Result<Vec<(String, String)>, String> {
+    use quick_xml::events::Event;
+    use quick_xml::Reader;
+
+    let mut reader = Reader::from_reader(wsdl);
+    reader.config_mut().trim_text(false);
+    let mut buf = Vec::new();
+
+    let mut addresses: Vec<(String, String)> = Vec::new();
+    // Track the current service name.
+    let mut current_service: Option<String> = Vec::new().into_iter().next();
+    let mut in_service = false;
+
+    loop {
+        match reader
+            .read_event_into(&mut buf)
+            .map_err(|e| e.to_string())?
+        {
+            Event::Start(ref e) | Event::Empty(ref e) => {
+                let raw = e.name();
+                let bytes = raw.as_ref();
+                let colon_pos = bytes.iter().rposition(|&b| b == b':');
+                let local = match colon_pos {
+                    Some(i) => &bytes[i + 1..],
+                    None => bytes,
+                };
+
+                if local == b"service" {
+                    // Extract the name attribute.
+                    for attr in e.attributes().flatten() {
+                        if attr.key.as_ref() == b"name" {
+                            current_service =
+                                Some(String::from_utf8_lossy(&attr.value).into_owned());
+                        }
+                    }
+                    in_service = true;
+                } else if local == b"address" && in_service {
+                    // Extract location attribute.
+                    for attr in e.attributes().flatten() {
+                        if attr.key.as_ref() == b"location" {
+                            let location = String::from_utf8_lossy(&attr.value).into_owned();
+                            if let Some(ref svc) = current_service {
+                                addresses.push((svc.clone(), location));
+                            }
+                        }
+                    }
+                }
+            }
+            Event::End(ref e) => {
+                let raw = e.name();
+                let bytes = raw.as_ref();
+                let local = match bytes.iter().rposition(|&b| b == b':') {
+                    Some(i) => &bytes[i + 1..],
+                    None => bytes,
+                };
+                if local == b"service" {
+                    in_service = false;
+                    current_service = None;
+                }
+            }
+            Event::Eof => break,
+            _ => {}
+        }
+        buf.clear();
+    }
+    Ok(addresses)
+}
+
+/// For the single-service scenario: the one `<soap:address location>` must have its
+/// host rewritten to the request host (our server's base URL host+port), not the
+/// original `localhost` placeholder (which has no port in the fixture).
+fn check_single_rewrite_invariant(wsdl: &[u8], our_base: &str) -> Result<(), String> {
+    let addresses = extract_soap_addresses(wsdl)?;
+    if addresses.is_empty() {
+        return Err("no <soap:address> elements found in WSDL".to_string());
+    }
+    // Extract the host+port from our_base (e.g. "http://localhost:8080" → "localhost:8080").
+    let expected_host = our_base
+        .trim_start_matches("http://")
+        .trim_start_matches("https://")
+        .split('/')
+        .next()
+        .unwrap_or("");
+
+    for (svc, location) in &addresses {
+        // The location host must contain our request host (with port).
+        let location_host = location
+            .trim_start_matches("http://")
+            .trim_start_matches("https://")
+            .split('/')
+            .next()
+            .unwrap_or("");
+        if location_host != expected_host {
+            return Err(format!(
+                "service '{svc}' address '{location}' host is '{location_host}', \
+                 expected '{expected_host}' (rewrite invariant failed)"
+            ));
+        }
+    }
+    eprintln!(
+        "  single rewrite: {} address(es), all host='{expected_host}'",
+        addresses.len()
+    );
+    Ok(())
+}
+
+/// For the multi-service scenario (`/soap/a` request):
+/// - ServiceA's `<soap:address>` must be rewritten to the request host+path.
+/// - ServiceB's `<soap:address>` must be preserved (not clobbered to `/soap/a`).
+fn check_multi_rewrite_invariant(wsdl: &[u8], our_base: &str) -> Result<(), String> {
+    let addresses = extract_soap_addresses(wsdl)?;
+
+    let expected_host = our_base
+        .trim_start_matches("http://")
+        .trim_start_matches("https://")
+        .split('/')
+        .next()
+        .unwrap_or("");
+
+    let mut found_a = false;
+    let mut found_b = false;
+
+    for (svc, location) in &addresses {
+        let location_host = location
+            .trim_start_matches("http://")
+            .trim_start_matches("https://")
+            .split('/')
+            .next()
+            .unwrap_or("");
+
+        if svc.contains('A') || svc.to_lowercase().contains("servicea") {
+            // ServiceA: must have been rewritten to the request host.
+            if location_host != expected_host {
+                return Err(format!(
+                    "ServiceA address '{location}' host is '{location_host}', \
+                     expected '{expected_host}' (ServiceA rewrite invariant failed)"
+                ));
+            }
+            // Must also point to /soap/a path.
+            if !location.contains("/soap/a") {
+                return Err(format!(
+                    "ServiceA address '{location}' does not contain '/soap/a' \
+                     (expected rewritten path)"
+                ));
+            }
+            eprintln!("  ServiceA address rewritten → '{location}' ✓");
+            found_a = true;
+        } else if svc.contains('B') || svc.to_lowercase().contains("serviceb") {
+            // ServiceB: must NOT have been clobbered. Its path must still be /soap/b.
+            if !location.contains("/soap/b") {
+                return Err(format!(
+                    "ServiceB address '{location}' does not contain '/soap/b' \
+                     (non-matched service address was clobbered — BLOCK-OS-C08-class finding)"
+                ));
+            }
+            eprintln!("  ServiceB address preserved → '{location}' ✓");
+            found_b = true;
+        }
+    }
+
+    if !found_a {
+        return Err(format!(
+            "ServiceA not found in WSDL addresses: {addresses:?}"
+        ));
+    }
+    if !found_b {
+        return Err(format!(
+            "ServiceB not found in WSDL addresses: {addresses:?}"
+        ));
+    }
+    Ok(())
+}
+
+/// GET bytes from `url`. Returns `(body_bytes)`.
+fn get_bytes(url: &str) -> Result<Vec<u8>, String> {
+    let client = reqwest::blocking::Client::new();
+    let resp = client.get(url).send().map_err(|e| e.to_string())?;
+    let status = resp.status().as_u16();
+    let bytes = resp.bytes().map_err(|e| e.to_string())?.to_vec();
+    if status != 200 {
+        return Err(format!(
+            "GET {url} returned HTTP {status}: {}",
+            String::from_utf8_lossy(&bytes)
+        ));
+    }
+    Ok(bytes)
 }
 
 /// POST XML bytes to `url` with the given Content-Type header.
