@@ -4,8 +4,10 @@
 //! and Layer-1 replay/diff against `unverified` golden snapshots.
 
 pub mod handlers;
+pub mod layer2;
 pub mod mask_rules;
 pub mod normalize;
+pub mod oracle;
 pub mod scenario;
 pub mod snapshot;
 pub mod sut;
