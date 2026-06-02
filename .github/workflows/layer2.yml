@@ -1,4 +1,4 @@
-name: crossref Layer 2 (conformance)
+name: crossref Layer 2 (conformance + interop)
 on:
   workflow_dispatch:
   schedule:
@@ -13,10 +13,16 @@ jobs:
         with:
           toolchain: "1.88.0"
       - uses: Swatinem/rust-cache@v2
-      - name: Build images + run Layer 2
+      - name: Build images + run Layer 2 (conformance + interop)
         run: |
+          # Build and start the core conformance topology (controlled-server, oracle, cxf).
           docker compose -f crossref/docker-compose.yml -f crossref/docker-compose.local.yml up -d --build
-          cargo run -p crossref --bin layer2 -- --promote
+          # Also build the interop client images (cxf-client, zeep-client; profile interop).
+          docker compose -f crossref/docker-compose.yml -f crossref/docker-compose.local.yml \
+            --profile interop build
+          # Run the full Layer-2 orchestrator: conformance + interop clients.
+          # --interop drives cxf-client and zeep-client via `docker compose ... run --rm`.
+          cargo run -p crossref --bin layer2 -- --promote --interop
       - name: Tear down
         if: always()
         run: docker compose -f crossref/docker-compose.yml -f crossref/docker-compose.local.yml down -v
