@@ -7,6 +7,7 @@ spec-compliant SOAP endpoint with no boilerplate envelope handling.
 
 [![crates.io](https://img.shields.io/crates/v/soap-server.svg)](https://crates.io/crates/soap-server)
 [![docs.rs](https://img.shields.io/docsrs/soap-server)](https://docs.rs/soap-server)
+[![MSRV](https://img.shields.io/crates/msrv/soap-server.svg)](https://crates.io/crates/soap-server)
 [![license](https://img.shields.io/crates/l/soap-server.svg)](https://github.com/NavistAu/soap-server#license)
 
 ---
@@ -29,17 +30,11 @@ spec-compliant SOAP endpoint with no boilerplate envelope handling.
 
 ```sh
 cargo add soap-server
+cargo add tokio --features full
 ```
 
-Or add manually to `Cargo.toml`:
-
-```toml
-[dependencies]
-tokio = { version = "1", features = ["full"] }
-soap-server = "0.1.0"
-```
-
-**MSRV:** Rust **1.88.0** or later.
+`soap-server` runs on a [Tokio](https://tokio.rs) runtime; adding `tokio` with the
+`full` feature is the simplest way to provide one.
 
 ---
 

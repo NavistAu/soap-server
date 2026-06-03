@@ -9,14 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.1] - 2026-06-03
 
-### Changed
+A documentation + release-tooling release; no library code changes.
 
-- Documentation: point the README "User guide" link at the live mdBook on GitHub Pages
-  (<https://navistau.github.io/soap-server/>) instead of the "once the repo is public"
-  placeholder; add the repository link to the book.
+### Fixed
+
+- Docs: install/usage docs no longer hardcode versions — installation uses `cargo add`, and
+  the crate version + MSRV are surfaced via auto-updating crates.io badges. (The MSRV docs
+  had incorrectly stated Rust 1.88.0; the crate's actual `rust-version` is 1.85.1.) The
+  "User guide" link points at the live mdBook (<https://navistau.github.io/soap-server/>).
+- Resolved broken rustdoc intra-doc links in `RotatingNonceCache` so the API docs build
+  cleanly under `-D warnings`.
 
 ### Internal
 
+- CI now denies rustdoc warnings (broken intra-doc links) and lints with `--all-features`;
+  CONTRIBUTING aligned to the actual CI gates.
 - First release published via crates.io Trusted Publishing (OIDC) — validates the automated
   `release/* → main` publish pipeline (0.1.0 was a manual bootstrap publish).
 

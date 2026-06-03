@@ -39,7 +39,7 @@ toolchain**. No Java, no Python, no CXF on the host.
 ### Prerequisites
 
 - Docker (with `docker compose`)
-- Rust toolchain (matching `rust-toolchain.toml` or `1.88`)
+- Rust toolchain — the crossref harness/Docker images pin Rust 1.88 (see crossref/manifest.toml); this is independent of the published soap-server crate MSRV, which is 1.85.1.
 
 ### Run Layer 2 locally (conformance + interop)
 
