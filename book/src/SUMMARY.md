@@ -6,3 +6,4 @@
 - [Capabilities & Limitations](./capabilities.md)
 - [WS-Security](./ws-security.md)
 - [Architecture](./architecture.md)
+- [Conformance](./conformance.md)
