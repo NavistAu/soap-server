@@ -2,9 +2,17 @@
 name = "soap-server"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.88.0"
+authors = ["Joshua Hogendorn <jhogendorn@gmail.com>", "NavistAu"]
 license = "MIT OR Apache-2.0"
-description = "A spec-compliant SOAP 1.2 server library for Rust with ONVIF support"
-exclude = ["/crossref"]
+description = "A WSDL-driven, spec-compliant SOAP 1.1/1.2 server library for Rust with WS-Security and ONVIF support"
+readme = "README.md"
+repository = "https://github.com/NavistAu/soap-server"
+homepage = "https://github.com/NavistAu/soap-server"
+documentation = "https://docs.rs/soap-server"
+keywords = ["soap", "wsdl", "onvif", "ws-security", "axum"]
+categories = ["web-programming::http-server", "network-programming"]
+exclude = ["/crossref", "/.planning", "/.github"]
 
 [dependencies]
 roxmltree = "0.21"
