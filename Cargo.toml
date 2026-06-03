@@ -2,7 +2,7 @@
 name = "soap-server"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.88.0"
+rust-version = "1.85.1"
 authors = ["Joshua Hogendorn <jhogendorn@gmail.com>", "NavistAu"]
 license = "MIT OR Apache-2.0"
 description = "A WSDL-driven, spec-compliant SOAP 1.1/1.2 server library for Rust with WS-Security and ONVIF support"
