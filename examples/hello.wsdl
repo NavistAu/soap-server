@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Minimal document/literal SOAP 1.2 WSDL for the `simple_service` example.
+     One operation, SayHello, takes a Name string and returns a Greeting string. -->
+<wsdl:definitions
+    xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+    xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap12/"
+    xmlns:xs="http://www.w3.org/2001/XMLSchema"
+    xmlns:tns="urn:example:hello"
+    targetNamespace="urn:example:hello">
+
+  <wsdl:types>
+    <xs:schema targetNamespace="urn:example:hello" elementFormDefault="qualified">
+      <xs:element name="SayHello">
+        <xs:complexType><xs:sequence>
+          <xs:element name="Name" type="xs:string" minOccurs="1"/>
+        </xs:sequence></xs:complexType>
+      </xs:element>
+      <xs:element name="SayHelloResponse">
+        <xs:complexType><xs:sequence>
+          <xs:element name="Greeting" type="xs:string" minOccurs="1"/>
+        </xs:sequence></xs:complexType>
+      </xs:element>
+    </xs:schema>
+  </wsdl:types>
+
+  <wsdl:message name="SayHelloRequest"><wsdl:part name="parameters" element="tns:SayHello"/></wsdl:message>
+  <wsdl:message name="SayHelloResponse"><wsdl:part name="parameters" element="tns:SayHelloResponse"/></wsdl:message>
+
+  <wsdl:portType name="HelloPort">
+    <wsdl:operation name="SayHello">
+      <wsdl:input message="tns:SayHelloRequest"/>
+      <wsdl:output message="tns:SayHelloResponse"/>
+    </wsdl:operation>
+  </wsdl:portType>
+
+  <wsdl:binding name="HelloBinding" type="tns:HelloPort">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <wsdl:operation name="SayHello">
+      <soap:operation soapAction="urn:example:hello/SayHello"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+  </wsdl:binding>
+
+  <wsdl:service name="HelloService">
+    <wsdl:port name="HelloPort" binding="tns:HelloBinding">
+      <soap:address location="http://localhost:8080/hello"/>
+    </wsdl:port>
+  </wsdl:service>
+</wsdl:definitions>

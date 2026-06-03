@@ -2,29 +2,20 @@
 
 ## Adding the dependency
 
-```
+```sh
 cargo add soap-server
 ```
 
-Or add it manually to your `Cargo.toml`:
+## Transitive dependencies
 
-```toml
-[dependencies]
-soap-server = "0.1.0"
+`soap-server` builds on `axum` (HTTP routing) and `tokio` (async runtime). Your
+application needs its own Tokio runtime; the simplest way to add one is:
+
+```sh
+cargo add tokio --features full
 ```
 
 ## Minimum Supported Rust Version (MSRV)
 
-`soap-server` requires **Rust 1.88.0** or later.
-
-## Transitive dependencies
-
-The library pulls in `axum` (HTTP routing) and `tokio` (async runtime) as direct
-dependencies. A complete async Tokio runtime is needed at the application level. The
-quickest way to satisfy this is:
-
-```toml
-[dependencies]
-tokio = { version = "1", features = ["full"] }
-soap-server = "0.1.0"
-```
+The MSRV is the `rust-version` declared in the crate's `Cargo.toml`, shown on the
+crate's [crates.io page](https://crates.io/crates/soap-server).

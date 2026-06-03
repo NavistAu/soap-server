@@ -1,3 +1,17 @@
+> ⚠️ **Historical design document — not current API documentation.**
+>
+> This is a pre-implementation planning/porting note written before `soap-server`
+> existed. It describes intended internals (python-zeep porting tables, a planned
+> `Server`/`Wsdl`/`Auth` type layout, typed handlers, "full XSD schema support")
+> that do **not** match the shipped public API. It is kept only as a record of the
+> original design intent.
+>
+> For accurate, current documentation see:
+> - **README.md** (repo root) — overview, install, quick start.
+> - **The mdBook** in [`book/`](../book/src/SUMMARY.md) — Introduction, Installation,
+>   Quick Start, Capabilities & Limitations, WS-Security, Architecture.
+> - **docs.rs/soap-server** — the rustdoc API reference (the authoritative API).
+
 # soap-server: Rust SOAP Server Crate
 
 ## Purpose

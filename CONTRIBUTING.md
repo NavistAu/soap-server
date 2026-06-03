@@ -23,8 +23,8 @@ cargo test --workspace --all-features
 Both of the following must pass cleanly before submitting a PR:
 
 ```sh
-cargo clippy --workspace --all-targets -- -D warnings
-cargo fmt --check
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo fmt --all -- --check
 ```
 
 Run `cargo fmt` (without `--check`) to apply formatting in place.
@@ -80,7 +80,7 @@ feat!: remove deprecated from_wsdl_bytes constructor
 All PRs must pass:
 
 - `cargo test --workspace --all-features`
-- `cargo clippy --workspace --all-targets -- -D warnings`
-- `cargo fmt --check`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo fmt --all -- --check`
 
 Do not open a PR with known CI failures.
