@@ -2,8 +2,11 @@
 
 A WSDL-driven SOAP 1.1/1.2 server library for Rust, built on top of [axum](https://docs.rs/axum).
 
-Provide a WSDL file, register async handler closures for each operation, and get a fully
-spec-compliant SOAP endpoint with no boilerplate envelope handling.
+Provide a WSDL file, register async handler closures for each operation, and get a
+SOAP 1.1/1.2 endpoint with no boilerplate envelope handling. `soap-server` is a
+transport + dispatch layer (not a code generator or full XSD validator) — see
+[Capabilities & Limitations](https://navistau.github.io/soap-server/capabilities.html)
+for exactly what it does and does not do.
 
 [![crates.io](https://img.shields.io/crates/v/soap-server.svg)](https://crates.io/crates/soap-server)
 [![docs.rs](https://img.shields.io/docsrs/soap-server)](https://docs.rs/soap-server)
