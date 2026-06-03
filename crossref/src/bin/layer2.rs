@@ -1,10 +1,10 @@
 //! Layer-2 entrypoint. Runs UNSANDBOXED (CI or explicit local). Not part of per-commit CI.
 //!
-//! Usage: cargo run -p crossref --bin layer2 -- [--promote] [--keep-up] [--scenarios <csv>] [--interop]
+//! Usage: `cargo run -p crossref --bin layer2 -- [--promote] [--keep-up] [--scenarios <csv>] [--interop]`
 //!
 //! --promote              flip promoted scenarios to "verified" and write oracle-canonical evidence.
 //! --keep-up              leave the docker compose topology running after the run (useful for debugging).
-//! --scenarios <csv>      run only the listed scenario names (comma-separated); default: all in-scope.
+//! `--scenarios <csv>`    run only the listed scenario names (comma-separated); default: all in-scope.
 //!                        Special value "__none__" skips all conformance scenarios (interop only).
 //! --interop              after the conformance run, drive the interop client containers
 //!                        (cxf-client + zeep-client) against our controlled server.

@@ -33,9 +33,9 @@ const DEFAULT_MAX_ENTRIES: usize = 100_000;
 /// cache.check_and_insert(&nonce)?;
 /// ```
 ///
-/// The soap-server [`SoapService`] handles this internally — consumers using
-/// [`validate_username_token`] via the server builder do not need to manage the
-/// cache directly. Consider interior-mutability refactoring in v0.2.
+/// The soap-server [`SoapService`](crate::SoapService) handles this internally — consumers
+/// using [`validate_username_token`](crate::validate_username_token) via the server builder
+/// do not need to manage the cache directly. Consider interior-mutability refactoring in v0.2.
 pub struct RotatingNonceCache {
     current: HashSet<String>,
     previous: HashSet<String>,

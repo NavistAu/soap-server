@@ -1,23 +1,59 @@
 # Quick Start
 
-This example shows the minimum required to get a SOAP service listening on port 8080.
+A complete, runnable service is in the repository as the
+[`simple_service`](https://github.com/NavistAu/soap-server/blob/main/examples/simple_service.rs)
+example with its WSDL fixture
+[`hello.wsdl`](https://github.com/NavistAu/soap-server/blob/main/examples/hello.wsdl).
+Run it with `cargo run --example simple_service`. This page walks that example
+from WSDL operation to wire response.
+
+## The contract: one operation in the WSDL
+
+`hello.wsdl` declares a single document/literal operation. The pieces that matter
+for wiring a handler are the operation name and its input/output element names:
+
+```xml
+<xs:element name="SayHello">                 <!-- request body element -->
+  <xs:complexType><xs:sequence>
+    <xs:element name="Name" type="xs:string" minOccurs="1"/>
+  </xs:sequence></xs:complexType>
+</xs:element>
+<xs:element name="SayHelloResponse">         <!-- response body element -->
+  <xs:complexType><xs:sequence>
+    <xs:element name="Greeting" type="xs:string" minOccurs="1"/>
+  </xs:sequence></xs:complexType>
+</xs:element>
+...
+<wsdl:operation name="SayHello"> ... </wsdl:operation>
+```
+
+## The server
 
 ```rust,no_run
-use soap_server::{FnHandler, ServerBuilder, SoapFault};
+use soap_server::{escape_text, FnHandler, ServerBuilder, SoapFault};
 use bytes::Bytes;
 
 #[tokio::main]
 async fn main() {
-    let svc = ServerBuilder::from_wsdl_file("path/to/service.wsdl")
+    let svc = ServerBuilder::from_wsdl_file("examples/hello.wsdl")
+        // "SayHello" MUST match the <wsdl:operation name="..."> above, or
+        // .build() returns Err — misnamed handlers fail at startup.
         .handler(
-            "MyOperation",
-            FnHandler::new(|_body: Bytes| async move {
-                // Parse body, call business logic, return response XML bytes.
-                Ok::<Bytes, SoapFault>(Bytes::from(
-                    r#"<MyOperationResponse xmlns="urn:example"/>"#,
-                ))
+            "SayHello",
+            FnHandler::new(|body: Bytes| async move {
+                // `body` is the <SayHello> element. Parse out <Name> (see the
+                // example for the quick-xml read_text + unescape helper)...
+                let name = parse_name(&body).unwrap_or_else(|| "world".into());
+                // ...then return the <SayHelloResponse> element. The library wraps
+                // it in the SOAP envelope verbatim, so escape any text you inject.
+                let xml = format!(
+                    r#"<SayHelloResponse xmlns="urn:example:hello"><Greeting>Hello, {}!</Greeting></SayHelloResponse>"#,
+                    escape_text(&name)
+                );
+                Ok::<Bytes, SoapFault>(Bytes::from(xml))
             }),
         )
+        .path("/hello")
         .build()
         .expect("WSDL build failed");
 
@@ -25,6 +61,37 @@ async fn main() {
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await.unwrap();
     axum::serve(listener, router).await.unwrap();
 }
+# fn parse_name(_b: &bytes::Bytes) -> Option<String> { None }
+```
+
+## Try it
+
+Send the `SayHello` request (SOAP 1.2 — the version is auto-detected):
+
+```sh
+curl -s http://localhost:8080/hello \
+  -H 'Content-Type: application/soap+xml' \
+  -d '<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope">
+        <s:Body>
+          <SayHello xmlns="urn:example:hello"><Name>Ada</Name></SayHello>
+        </s:Body>
+      </s:Envelope>'
+```
+
+You get back your `SayHelloResponse` element, wrapped in a SOAP 1.2 envelope by
+the library:
+
+```xml
+<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope"><env:Body>
+  <SayHelloResponse xmlns="urn:example:hello"><Greeting>Hello, Ada!</Greeting></SayHelloResponse>
+</env:Body></env:Envelope>
+```
+
+Fetch the contract itself with a GET — every service path also serves its WSDL,
+with the `<soap:address>` rewritten to the request URL:
+
+```sh
+curl -s 'http://localhost:8080/hello?wsdl'
 ```
 
 ## Step-by-step

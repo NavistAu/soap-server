@@ -71,6 +71,31 @@ Both variants of `wsse:Password` are accepted:
 The `compute_digest` and `validate_username_token` helpers from `soap_server::wssec` are
 also exported at the crate root if you need to implement custom token validation logic.
 
+## A UsernameToken request
+
+A `PasswordDigest` request carries a `<wsse:Security>` header in the SOAP envelope.
+The client computes `Password = Base64(SHA-1(Nonce + Created + password))` from a
+fresh random `Nonce` and the current `Created` timestamp:
+
+```xml
+<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope">
+  <s:Header>
+    <wsse:Security xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd"
+                   xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd">
+      <wsse:UsernameToken>
+        <wsse:Username>admin</wsse:Username>
+        <wsse:Password Type=".../username-token-profile-1.0#PasswordDigest">9kFw...=</wsse:Password>
+        <wsse:Nonce>LKqI...=</wsse:Nonce>
+        <wsu:Created>2026-06-03T08:00:00Z</wsu:Created>
+      </wsse:UsernameToken>
+    </wsse:Security>
+  </s:Header>
+  <s:Body>
+    <MyOperation xmlns="urn:example"/>
+  </s:Body>
+</s:Envelope>
+```
+
 ## Nonce replay and timestamp freshness
 
 Every request with a `PasswordDigest` token is checked against a rotating in-memory nonce
@@ -81,9 +106,32 @@ Timestamp freshness is enforced with a default tolerance of **±300 seconds**. R
 whose `<wsu:Created>` timestamp falls outside that window are rejected.
 
 The `RotatingNonceCache` type is exported publicly if you need to pass a pre-configured
-cache instance to the builder for non-default window sizes.
+cache instance to the builder for non-default window sizes. Adjust the timestamp window
+with `.timestamp_tolerance_secs(...)` on the builder.
+
+### Distributed deployments
+
+The nonce cache is **per process, in memory**. Behind a load balancer with several
+server processes, a nonce is only known to the node that first saw it — so a replay
+that lands on a *different* node is not detected. If strict cross-fleet replay
+rejection matters, pin each client to one node (sticky sessions), terminate auth at
+a single front door, or accept that replay protection is per-node. Timestamp
+freshness, by contrast, is stateless and holds on every node (assuming their clocks
+are in sync).
 
 ## Authentication failure response
 
 Operations that require authentication but receive a missing or invalid
-`<wsse:Security>` header receive a `Sender` fault in the appropriate SOAP version.
+`<wsse:Security>` header receive a `Sender` fault (SOAP 1.1: `Client`) in the SOAP
+version of the request:
+
+```xml
+<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope">
+  <env:Body>
+    <env:Fault>
+      <env:Code><env:Value>env:Sender</env:Value></env:Code>
+      <env:Reason><env:Text xml:lang="en">WS-Security header required but not provided</env:Text></env:Reason>
+    </env:Fault>
+  </env:Body>
+</env:Envelope>
+```

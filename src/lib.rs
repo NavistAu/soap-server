@@ -2,7 +2,10 @@
 //!
 //! A WSDL-driven SOAP 1.1/1.2 server library for Rust, built on top of
 //! [axum](https://docs.rs/axum). Provide a WSDL file, register async handler
-//! closures for each operation, and get a fully spec-compliant SOAP endpoint.
+//! closures for each operation, and get a SOAP 1.1/1.2 endpoint with no
+//! boilerplate envelope handling. `soap-server` is a transport + dispatch layer —
+//! not a code generator or full XSD validator (see the Capabilities & Limitations
+//! page in the user guide for the precise scope).
 //!
 //! ## Features
 //!
