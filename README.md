@@ -156,8 +156,7 @@ async fn example() -> Result<(), Box<dyn std::error::Error>> {
 ## Documentation
 
 - **API reference:** <https://docs.rs/soap-server>
-- **User guide (mdBook):** published to GitHub Pages — see the repository for the URL once
-  the repo is public. Source is in [`book/src/`](book/src/).
+- **User guide (mdBook):** <https://navistau.github.io/soap-server/>
 
 ---
 
