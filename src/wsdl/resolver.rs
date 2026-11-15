@@ -263,12 +263,10 @@ pub fn rewrite_wsdl_address_for_service(
                         }
                     }
                 }
-                Ok(Event::End(_)) => {
-                    if in_target_service {
-                        service_depth -= 1;
-                        if service_depth == 0 {
-                            in_target_service = false;
-                        }
+                Ok(Event::End(_)) if in_target_service => {
+                    service_depth -= 1;
+                    if service_depth == 0 {
+                        in_target_service = false;
                     }
                 }
                 Ok(Event::Eof) | Err(_) => break,
