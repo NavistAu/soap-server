@@ -12,8 +12,10 @@ pub trait SchemaLoader: Send + Sync {
 }
 
 /// A SchemaLoader that always returns Err — for tests that don't need imports.
+#[cfg(test)]
 pub struct NullSchemaLoader;
 
+#[cfg(test)]
 impl SchemaLoader for NullSchemaLoader {
     fn load(&self, _namespace: Option<&str>, location: &str) -> Result<String, SchemaError> {
         Err(SchemaError::UnknownRef(format!(

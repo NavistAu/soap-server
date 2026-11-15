@@ -465,15 +465,13 @@ fn parse_child_element_names(body_bytes: &[u8]) -> Result<HashSet<String>, Strin
                     children.insert(name);
                 }
             }
-            Ok(Event::Empty(e)) => {
-                if depth == 1 {
-                    // Self-closing direct child of root
-                    let local_name = e.local_name();
-                    let name = std::str::from_utf8(local_name.as_ref())
-                        .map_err(|e| e.to_string())?
-                        .to_string();
-                    children.insert(name);
-                }
+            Ok(Event::Empty(e)) if depth == 1 => {
+                // Self-closing direct child of root
+                let local_name = e.local_name();
+                let name = std::str::from_utf8(local_name.as_ref())
+                    .map_err(|e| e.to_string())?
+                    .to_string();
+                children.insert(name);
             }
             Ok(Event::End(_)) => {
                 if depth == 0 {

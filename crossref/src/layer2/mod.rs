@@ -1173,10 +1173,8 @@ fn extract_body_child(envelope: &[u8]) -> Option<Vec<u8>> {
                 // End of Body (in_body but not collecting) — nothing to do.
             }
 
-            Event::Text(ref t) => {
-                if collecting {
-                    out.extend_from_slice(t.as_ref());
-                }
+            Event::Text(ref t) if collecting => {
+                out.extend_from_slice(t.as_ref());
             }
 
             _ => {}

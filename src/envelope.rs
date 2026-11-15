@@ -337,19 +337,15 @@ fn collect_header_children(
                     current_buf.clear();
                 }
             }
-            (_, Event::Text(t)) => {
-                if depth > 0 {
-                    current_buf.extend_from_slice(t.as_ref());
-                }
+            (_, Event::Text(t)) if depth > 0 => {
+                current_buf.extend_from_slice(t.as_ref());
             }
-            (_, Event::GeneralRef(r)) => {
-                if depth > 0 {
-                    // Re-emit entity reference as &name; so text content is
-                    // preserved faithfully (e.g. &lt; stays as &lt; in the bytes).
-                    current_buf.extend_from_slice(b"&");
-                    current_buf.extend_from_slice(r.as_ref());
-                    current_buf.extend_from_slice(b";");
-                }
+            (_, Event::GeneralRef(r)) if depth > 0 => {
+                // Re-emit entity reference as &name; so text content is
+                // preserved faithfully (e.g. &lt; stays as &lt; in the bytes).
+                current_buf.extend_from_slice(b"&");
+                current_buf.extend_from_slice(r.as_ref());
+                current_buf.extend_from_slice(b";");
             }
             _ => {}
         }
